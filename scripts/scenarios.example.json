@@ -1,0 +1,137 @@
+{
+ "probe": {
+  "status": "valid",
+  "officialName": "YILMAZ AYSE",
+  "fields": {
+   "datevisiton": "10.09.2026 09:12",
+   "kpp_date": "07.09.2026",
+   "kpp_no": "Термез-7"
+  },
+  "labels": {
+   "Kelgan sanasi": "10.09.2026 09:12",
+   "Chegara KPP sanasi": "07.09.2026",
+   "Kpp №": "Термез-7"
+  },
+  "tables": [],
+  "blocks": [],
+  "keys": [
+   "datevisiton | Kelgan sanasi",
+   "kpp_date | Chegara KPP sanasi",
+   "kpp_no | Kpp №"
+  ],
+  "panelIds": [
+   "passport-info",
+   "general-info",
+   "additional-info"
+  ]
+ },
+ "arrival": {
+  "status": "done",
+  "probe": {
+   "fields": {
+    "kpp_date": "09.09.2026"
+   },
+   "labels": {
+    "Chegara KPP sanasi": "09.09.2026"
+   },
+   "tables": [],
+   "blocks": []
+  },
+  "last": {
+   "tables": [],
+   "blocks": []
+  },
+  "whenGate": {
+   "status": "needs_decision",
+   "probe": {
+    "fields": {
+     "kpp_date": "31.08.2026",
+     "kpp_no": "Ташкент-аэропорт"
+    },
+    "labels": {
+     "Chegara KPP sanasi": "31.08.2026",
+     "Kpp №": "Ташкент-аэропорт"
+    },
+    "tables": [],
+    "blocks": []
+   },
+   "last": {
+    "tables": [
+     {
+      "id": "stays",
+      "caption": "",
+      "headers": [
+       "Mehmonxona",
+       "Kirish sanasi",
+       "Chiqish sanasi"
+      ],
+      "rows": [
+       "Hotel Uzbekistan | 01.09.2026 | 03.09.2026",
+       "Grand Mir | 03.09.2026 | 05.09.2026"
+      ]
+     }
+    ],
+    "blocks": []
+   }
+  },
+  "whenForce": {
+   "status": "done",
+   "probe": {
+    "fields": {},
+    "labels": {},
+    "tables": [],
+    "blocks": []
+   },
+   "last": {
+    "tables": [],
+    "blocks": []
+   }
+  }
+ },
+ "byGuest": {
+  "g-tr2": {
+   "probe": {
+    "status": "valid",
+    "officialName": "DEMIR MEHMET",
+    "fields": {
+     "kpp_date": "09.09.2026"
+    },
+    "labels": {
+     "Chegara KPP sanasi": "09.09.2026",
+     "Kelgan sanasi": "09.09.2026 15:02"
+    },
+    "tables": [],
+    "blocks": []
+   }
+  },
+  "g-us": {
+   "probe": {
+    "status": "valid",
+    "officialName": "SMITH JOHN",
+    "fields": {
+     "kpp_date": "31.08.2026",
+     "kpp_no": "Ташкент-аэропорт"
+    },
+    "labels": {
+     "Chegara KPP sanasi": "31.08.2026"
+    },
+    "tables": [],
+    "blocks": []
+   }
+  },
+  "g-kpp": {
+   "probe": {
+    "status": "valid",
+    "officialName": "IVANOV PETR",
+    "fields": {
+     "kpp_date": "06.09.2026"
+    },
+    "labels": {
+     "Chegara KPP sanasi": "06.09.2026"
+    },
+    "tables": [],
+    "blocks": []
+   }
+  }
+ }
+}

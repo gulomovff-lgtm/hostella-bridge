@@ -1,0 +1,52 @@
+{
+  "name": "hostella-bridge",
+  "productName": "Hostella Bridge",
+  "version": "0.1.0",
+  "description": "Мост e-mehmon для Hosti Cloud: программа в трее на компьютере филиала, исполняет задачи госрегистрации из очереди кассы",
+  "main": "main.js",
+  "private": true,
+  "author": "Hosti",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "start:demo": "electron . --demo",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "core:demo": "node scripts/core-run.mjs --demo",
+    "dist": "electron-builder build --win --publish never"
+  },
+  "build": {
+    "appId": "com.hostella.bridge",
+    "productName": "Hostella Bridge",
+    "copyright": "Copyright © 2026 Hosti",
+    "files": [
+      "main.js",
+      "src/**/*",
+      "ui/**/*",
+      "electron/**/*",
+      "assets/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hostella Bridge",
+      "runAfterFinish": true
+    }
+  },
+  "dependencies": {
+    "electron-log": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^26.8.1"
+  }
+}
