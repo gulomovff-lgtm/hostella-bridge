@@ -70,12 +70,13 @@ describe('done против failed', () => {
 
 describe('дамп для Firestore', () => {
   test('flattenDump режет размеры и сворачивает строки', () => {
-    const d = flattenDump({ fields: { k: 'x'.repeat(500) }, tables: Array.from({ length: 8 }, () => ({ rows: Array.from({ length: 40 }, () => ['a', 'b']) })), blocks: ['b'.repeat(500)], keys: ['k'] });
+    const d = flattenDump({ fields: { k: 'x'.repeat(500) }, tables: Array.from({ length: 8 }, () => ({ rows: Array.from({ length: 40 }, () => ['a', 'b']) })), blocks: ['b'.repeat(2000)], keys: ['k'] });
     assert.equal(d.fields.k.length, 160);
     assert.equal(d.tables.length, 5);
     assert.equal(d.tables[0].rows.length, 30);
     assert.equal(d.tables[0].rows[0], 'a | b');
-    assert.equal(d.blocks[0].length, 300);
+    // 1500, а не 300: список проживаний стоит в конце карточки последней вкладки.
+    assert.equal(d.blocks[0].length, 1500);
     assert.equal(flattenDump(null), null);
   });
   test('sanitize убирает функции и undefined, вложенные массивы делает строками', () => {
@@ -115,5 +116,16 @@ describe('лист убытия заново (sheet)', () => {
     const b = classify('sheet', { status: 'no_print_btn' });
     assert.equal(b.status, 'failed');
     assert.match(b.error.message, /Кнопка печати/);
+  });
+});
+
+describe('строки проживаний последней вкладки', () => {
+  test('stayLines и lastActivity доезжают до кассы, блоки не режутся до 300 знаков', () => {
+    const long = 'x'.repeat(900) + '\nMehmon bizda qolgan::\n1 11.09.2026 - ... - HOSTELLA\n2 10.09.2026 - 11.09.2026 - ASIA HOSTEL';
+    const r = classify('arrival', { status: 'needs_decision', probe: {}, last: { blocks: [long], stayLines: ['1 11.09.2026 - ... - HOSTELLA', '2 10.09.2026 - 11.09.2026 - ASIA HOSTEL'], lastActivity: 'E-MEHMON tizimidagi oxirgi faollik:: 11.09.2026 21:19' } });
+    assert.equal(r.status, 'done');
+    assert.deepEqual(r.result.last.stayLines, ['1 11.09.2026 - ... - HOSTELLA', '2 10.09.2026 - 11.09.2026 - ASIA HOSTEL']);
+    assert.ok(r.result.last.blocks[0].includes('ASIA HOSTEL'), 'блок обрезан — список проживаний потерян');
+    assert.match(r.result.last.lastActivity, /oxirgi faollik/);
   });
 });

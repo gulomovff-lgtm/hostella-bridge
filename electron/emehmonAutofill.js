@@ -502,8 +502,23 @@ const HIDDEN_HELPERS = `
         if (headers.length || rows.length) tables.push({ id: tb.id||'', caption: textOf(tb.querySelector('caption')).slice(0,80), headers: headers, rows: rows });
       }
     }
-    var bl = panel.querySelectorAll('.card, .alert, .well, .list-group');
-    for (var b=0;b<bl.length && blocks.length<10;b++){ var tx=String(bl[b].innerText||bl[b].textContent||'').trim(); if (tx) blocks.push(tx.slice(0,300)); }
+    // Текстовые блоки — до 1500 знаков: список проживаний «Mehmon bizda qolgan»
+    // на последней вкладке стоит в конце карточки, и при 300 знаках отрезался —
+    // касса не видела, что гость только что выехал из соседнего отеля.
+    var bl = panel.querySelectorAll('.card, .alert, .well, .list-group, ol, ul');
+    for (var b=0;b<bl.length && blocks.length<12;b++){ var tx=String(bl[b].innerText||bl[b].textContent||'').trim().slice(0,1500); if (tx && blocks.indexOf(tx)===-1) blocks.push(tx); }
+    // Строки проживаний как есть: «1 10.09.2026 - 11.09.2026 - ASIA HOSTEL»,
+    // «11.09.2026 - ... - HOSTELLA» (открытое). Берём со всей вкладки, не завися
+    // от разметки; разбирает касса (kppRules.parseEmehmonProbe / parseStayLine).
+    var stayLines=[], lastActivity='';
+    try {
+      var all=String(((panel!==document ? panel : document.body).innerText)||'').split(/\\n+/);
+      for (var li=0; li<all.length && stayLines.length<20; li++){
+        var ln=all[li].replace(/\\s+/g,' ').trim();
+        if (/\\d{2}\\.\\d{2}\\.\\d{4}\\s*[-–—]\\s*(\\d{2}\\.\\d{2}\\.\\d{4}|\\.{3}|…)?\\s*[-–—]\\s*\\S/.test(ln)) stayLines.push(ln.slice(0,160));
+        if (!lastActivity && /oxirgi faollik|последн\\S* актив/i.test(ln)) lastActivity=ln.slice(0,160);
+      }
+    } catch(e){}
     // ФИО из госбазы: фамилия → имя → отчество. В портале surname — фамилия,
     // firstname — имя, а lastname — ОТЧЕСТВО (у многих заглушка «XXX»); прежний
     // порядок давал «фамилия отчество имя».
@@ -517,7 +532,7 @@ const HIDDEN_HELPERS = `
     var name = parts.join(' ').replace(/\\s+/g,' ').trim();
     if (!name) { for (var lk in labels){ if (/f\\.?i\\.?o|фио|to\\W?liq ism|full ?name/i.test(lk)) { name=labels[lk]; break; } } }
     var panelIds=[]; var panes=document.querySelectorAll('.tab-pane'); for (var q=0;q<panes.length;q++) if (panes[q].id) panelIds.push(panes[q].id);
-    return { fields:out, labels:labels, tables:tables, blocks:blocks, keys:keys, officialName:name, panelIds:panelIds };
+    return { fields:out, labels:labels, tables:tables, blocks:blocks, keys:keys, stayLines:stayLines, lastActivity:lastActivity, officialName:name, panelIds:panelIds };
   }
   // Слить дампы двух вкладок в один (поля/подписи — объединение, таблицы/блоки/ключи — конкатенация).
   function mergeProbe(a, b){
@@ -526,7 +541,8 @@ const HIDDEN_HELPERS = `
     for (k in a.fields) f[k]=a.fields[k]; for (k in b.fields) if (f[k]===undefined) f[k]=b.fields[k];
     for (k in a.labels) l[k]=a.labels[k]; for (k in b.labels) if (l[k]===undefined) l[k]=b.labels[k];
     return { fields:f, labels:l, tables:(a.tables||[]).concat(b.tables||[]), blocks:(a.blocks||[]).concat(b.blocks||[]),
-             keys:(a.keys||[]).concat(b.keys||[]), officialName:a.officialName||b.officialName||'', panelIds:a.panelIds||b.panelIds||[] };
+             keys:(a.keys||[]).concat(b.keys||[]), stayLines:(a.stayLines||[]).concat(b.stayLines||[]), lastActivity:a.lastActivity||b.lastActivity||'',
+             officialName:a.officialName||b.officialName||'', panelIds:a.panelIds||b.panelIds||[] };
   }
 `;
 

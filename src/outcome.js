@@ -70,7 +70,11 @@ function flattenDump(d) {
       rows: ((t && t.rows) || []).slice(0, 30).map(flatRow),
     }));
   }
-  if (Array.isArray(d.blocks)) out.blocks = d.blocks.slice(0, 10).map((b) => cap(b, 300));
+  // Блоки до 1500 знаков: список проживаний на последней вкладке стоит в конце
+  // карточки, при 300 знаках он отрезался и касса не видела соседний отель.
+  if (Array.isArray(d.blocks)) out.blocks = d.blocks.slice(0, 12).map((b) => cap(b, 1500));
+  if (Array.isArray(d.stayLines)) out.stayLines = d.stayLines.slice(0, 20).map((x) => cap(x, 160));
+  if (d.lastActivity) out.lastActivity = cap(d.lastActivity, 160);
   if (Array.isArray(d.keys)) out.keys = d.keys.slice(0, 120).map((k) => cap(k, 160));
   if (d.officialName) out.officialName = cap(d.officialName, 160);
   if (Array.isArray(d.panelIds)) out.panelIds = d.panelIds.slice(0, 20).map((p) => cap(p, 40));
