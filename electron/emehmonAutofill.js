@@ -287,6 +287,20 @@ function buildDepartureAutoScript(guest) {
   function fire(el){ el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); }
 
   try {
+    // Лист убытия снимает в PDF main-процесс (emehmonSheet.js): окно листа он
+    // держит скрытым, а диалог печати некому закрыть — печать глушим и здесь,
+    // со стороны родителя: это страхует окно без адреса (document.write).
+    if (GUEST.sheet && !window.__hostellaOpenWrapped) {
+      window.__hostellaOpenWrapped = true;
+      var _open = window.open;
+      window.open = function(){
+        var w = _open.apply(window, arguments);
+        try { if (w) { w.print = function(){ try { w.__hostellaPrintWanted = true; } catch(e){} }; } } catch(e){}
+        return w;
+      };
+      var _print = window.print;
+      window.print = function(){ if (window.__hostellaSheetOff) { return _print.apply(window, arguments); } window.__hostellaPrintWanted = true; };
+    }
     // 0) страница входа → нужен человек (капча/логин)
     if ((location.pathname||'').indexOf('login') !== -1 || document.querySelector('input[type="password"]')) {
       return { status: 'need_login' };
@@ -337,7 +351,8 @@ function buildDepartureAutoScript(guest) {
       el.value = payType; try { if ($) $(el).val(payType).trigger('change'); } catch(e){} fire(el);
     });
 
-    // 6) галочка печати листа убытия (по умолчанию e-mehmon ставит её — снимаем если печать не нужна)
+    // 6) галочка печати листа убытия (по умолчанию e-mehmon ставит её — снимаем, если лист не нужен;
+    //    при sheet:true лист открывается скрытым окном и снимается в PDF — emehmonSheet.js)
     var pc = document.getElementById('printAll');
     if (pc) { pc.checked = !!GUEST.print; fire(pc); }
 
@@ -725,6 +740,20 @@ function buildDepartureBulkScript(payload) {
   function norm(s){ return (s||'').replace(/\\s/g,'').toUpperCase(); }
   function fire(el){ el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); }
   try {
+    // Лист убытия снимает в PDF main-процесс (emehmonSheet.js): окно листа он
+    // держит скрытым, а диалог печати некому закрыть — печать глушим и здесь,
+    // со стороны родителя: это страхует окно без адреса (document.write).
+    if (DATA.sheet && !window.__hostellaOpenWrapped) {
+      window.__hostellaOpenWrapped = true;
+      var _open = window.open;
+      window.open = function(){
+        var w = _open.apply(window, arguments);
+        try { if (w) { w.print = function(){ try { w.__hostellaPrintWanted = true; } catch(e){} }; } } catch(e){}
+        return w;
+      };
+      var _print = window.print;
+      window.print = function(){ if (window.__hostellaSheetOff) { return _print.apply(window, arguments); } window.__hostellaPrintWanted = true; };
+    }
     if ((location.pathname||'').indexOf('login') !== -1 || document.querySelector('input[type="password"]')) {
       return { status: 'need_login' };
     }

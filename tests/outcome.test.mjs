@@ -83,3 +83,20 @@ describe('дамп для Firestore', () => {
     assert.deepEqual(s, { a: 1, rows: ['1 | 2', '3'] });
   });
 });
+
+describe('лист убытия', () => {
+  test('убытие done несёт лист отдельной картой — путь, размер, время', () => {
+    const r = classify('departure', { status: 'done', sheet: { path: 't/hst/b/markaz/sheets/g1/AB123_20260911_1432.pdf', bytes: 48211, at: '2026-09-11T09:32:00.000Z', source: 'child' } });
+    assert.equal(r.status, 'done');
+    assert.equal(r.result.sheet.path, 't/hst/b/markaz/sheets/g1/AB123_20260911_1432.pdf');
+    assert.equal(r.result.sheet.bytes, 48211);
+    assert.equal(r.result.sheet.source, 'child');
+  });
+  test('лист не снят — задача всё равно done, причина в sheetError', () => {
+    const r = classify('departure', { status: 'submitted', sheetError: { code: 'no_sheet', message: '' } });
+    assert.equal(r.status, 'done');
+    assert.equal(r.code, 'submitted');
+    assert.equal(r.result.sheetError.code, 'no_sheet');
+    assert.equal(r.result.sheet, undefined);
+  });
+});

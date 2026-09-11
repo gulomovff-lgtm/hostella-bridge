@@ -24,6 +24,8 @@ const { Session } = require('./src/auth');
 const { Firestore, isTransient } = require('./src/firebaseRest');
 const { Worker } = require('./src/queue');
 const { Portal } = require('./src/portal');
+const { uploadObject } = require('./src/storageRest');
+const { sheetFileName } = require('./electron/emehmonSheet');
 
 log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
@@ -169,6 +171,18 @@ function ensurePortal(branchId) {
     branchId, getCreds, log,
     onLoginOk: () => { if (worker) worker.resume(); broadcast(); },
     onLoginShown: () => broadcast(),
+    // Лист убытия — в хранилище кассы, в каталог филиала: правила Storage
+    // пускают туда мост только с PDF (hostella-cloud/storage.rules, sheets).
+    uploadSheet: async ({ guestId, passport, pdf }) => {
+      const tenantId = sessionB && sessionB.pairing && sessionB.pairing.tenantId;
+      if (!tenantId) throw new Error('мост не подключён');
+      const seg = String(guestId || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64) || 'guest';
+      const filePath = `t/${tenantId}/b/${branchId}/sheets/${seg}/${sheetFileName({ passport })}`;
+      return uploadObject({
+        base: profile.storageBase, bucket: profile.storageBucket, path: filePath,
+        bytes: pdf, contentType: 'application/pdf', token: await sessionB.getIdToken(),
+      });
+    },
   });
   return portal;
 }

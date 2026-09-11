@@ -11,9 +11,15 @@
  * Мост никогда не показывает окно портала ради результата мастера — итог
  * уходит кассе, а кассир видит его в своей карточке гостя. Окно видно
  * ровно в одном случае: нужен вход.
+ *
+ * Убытие идёт с листом: портал после «Check-Out» открывает лист убытия и
+ * зовёт печать; окно держится скрытым, печать глушится, лист снимается в
+ * PDF и кладётся в хранилище кассы (electron/emehmonSheet.js — общий
+ * модуль с боевой Hostella, копия побайтно, как emehmonAutofill.js).
  */
 const { BrowserWindow, session } = require('electron');
 const scripts = require('../electron/emehmonAutofill');
+const sheet = require('../electron/emehmonSheet');
 const { TIMING } = require('./config');
 
 const ORIGIN = 'https://emehmon.uz';
@@ -38,9 +44,11 @@ class Portal {
    * @param {object} [p.log]
    * @param {Function} [p.onLoginOk]  вход выполнен — можно продолжать очередь
    * @param {Function} [p.onLoginShown]
+   * @param {Function} [p.uploadSheet] ({ guestId, passport, pdf }) → { path, bytes }: лист убытия в хранилище кассы
    */
-  constructor({ branchId, getCreds, log = console, onLoginOk = () => {}, onLoginShown = () => {} }) {
+  constructor({ branchId, getCreds, log = console, onLoginOk = () => {}, onLoginShown = () => {}, uploadSheet = null }) {
     this.branchId = branchId;
+    this.uploadSheet = uploadSheet;
     this.getCreds = getCreds;
     this.log = log;
     this.onLoginOk = onLoginOk;
@@ -61,7 +69,8 @@ class Portal {
     try {
       session.fromPartition(part).webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
         const t = details.resourceType;
-        const cancel = t === 'font' || t === 'media' || (t === 'image' && !/captcha/i.test(details.url || ''));
+        // Пока снимается лист убытия, картинки и шрифты нужны: они попадут в PDF.
+        const cancel = !sheet.isCapturing() && (t === 'font' || t === 'media' || (t === 'image' && !/captcha/i.test(details.url || '')));
         cb({ cancel });
       });
     } catch (e) {
@@ -76,16 +85,9 @@ class Portal {
     };
     win.webContents.on('will-navigate', block);
     win.webContents.on('will-redirect', block);
-    win.webContents.setWindowOpenHandler(({ url }) => {
-      if (!isEmehmonUrl(url)) return { action: 'deny' };
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          autoHideMenuBar: true,
-          webPreferences: { partition: this.partition, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
-        },
-      };
-    });
+    // Всплывающие окна — общий обработчик с боевой: только портал; на время
+    // снятия листа убытия окно создаётся скрытым (emehmonSheet.js).
+    sheet.installWindowOpenHandler(win, { isAllowedUrl: isEmehmonUrl, partition: this.partition, log: this.log });
   }
 
   win() {
@@ -172,7 +174,7 @@ class Portal {
     return p;
   }
 
-  async _run(type, p) {
+  async _run(type, p, job) {
     switch (type) {
       case 'probe':
         await this.load('/listok/create-page');
@@ -186,10 +188,7 @@ class Portal {
       case 'departure':
         await this.load('/listok');
         if (this.atLogin()) return { status: 'need_login' };
-        return this.exec(scripts.buildDepartureAutoScript({
-          guestName: p.guestName || p.fullName || '', passport: p.passport || '',
-          amount: p.amount, payType: p.payType, print: false,
-        }));
+        return this._departWithSheet(p, job);
       case 'check':
         await this.load('/listok');
         if (this.atLogin()) return { status: 'need_login' };
@@ -208,6 +207,43 @@ class Portal {
         return this.exec(scripts.buildRecalcScript(p));
       default:
         return { status: 'error', message: `неизвестный тип задачи: ${type}` };
+    }
+  }
+
+  /**
+   * Убытие с листом. Портал после «Check-Out» открывает лист убытия и зовёт
+   * печать; окно держим скрытым, печать глушим, лист снимаем в PDF и кладём
+   * в хранилище кассы. Лист — не условие успеха: убытие в госсистеме уже
+   * прошло, поэтому его неудача идёт отдельным полем `sheetError`, а не
+   * статусом задачи, и касса всё равно отмечает гостя выведенным.
+   */
+  async _departWithSheet(p, job) {
+    const withSheet = p.print !== false && typeof this.uploadSheet === 'function';
+    const cap = withSheet ? sheet.armSheetCapture(this.win(), { log: this.log }) : null;
+    try {
+      const res = await this.exec(scripts.buildDepartureAutoScript({
+        guestName: p.guestName || p.fullName || '', passport: p.passport || '',
+        amount: p.amount, payType: p.payType, print: withSheet, sheet: withSheet,
+      }));
+      const out = res && typeof res === 'object' ? res : { status: 'error' };
+      if (!cap || !['done', 'submitted'].includes(out.status)) return out;
+      const got = await cap.result({ graceMs: 8000 });
+      if (!got.ok) {
+        this.log.warn('[portal] лист убытия не снят:', got.code, got.message || '');
+        out.sheetError = { code: got.code, message: got.message || '' };
+        return out;
+      }
+      try {
+        const up = await this.uploadSheet({ guestId: (job && job.guestId) || p.guestId || '', passport: p.passport || '', pdf: got.pdf });
+        out.sheet = { path: up.path, bytes: got.bytes, at: new Date().toISOString(), source: got.source };
+        this.log.info(`[portal] лист убытия: ${up.path} (${got.bytes} байт, ${got.source})`);
+      } catch (e) {
+        this.log.warn('[portal] лист убытия не загружен:', e.message);
+        out.sheetError = { code: 'sheet_upload', message: e.message };
+      }
+      return out;
+    } finally {
+      if (cap) cap.dispose();
     }
   }
 

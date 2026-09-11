@@ -22,6 +22,9 @@ const PROD = Object.freeze({
   identityBase: 'https://identitytoolkit.googleapis.com',
   tokenBase: 'https://securetoken.googleapis.com',
   firestoreBase: 'https://firestore.googleapis.com',
+  // Лист убытия кладётся в хранилище кассы (hostella-cloud/storage.rules, каталог sheets).
+  storageBase: 'https://firebasestorage.googleapis.com',
+  storageBucket: 'hosti-cloud-5577f.firebasestorage.app',
 });
 
 const DEMO = Object.freeze({
@@ -34,6 +37,8 @@ const DEMO = Object.freeze({
   identityBase: 'http://127.0.0.1:9099/identitytoolkit.googleapis.com',
   tokenBase: 'http://127.0.0.1:9099/securetoken.googleapis.com',
   firestoreBase: 'http://127.0.0.1:8080',
+  storageBase: 'http://127.0.0.1:9199',
+  storageBucket: 'demo-hostella.appspot.com',
 });
 
 /** Профиль по аргументам запуска (`--demo`) или переменной окружения. */
