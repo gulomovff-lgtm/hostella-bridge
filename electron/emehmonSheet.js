@@ -56,6 +56,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  * видимом окне) — видимым, как раньше.
  */
 function installWindowOpenHandler(win, { isAllowedUrl, partition, parent = null, log = console }) {
+  // parent — окно или функция, возвращающая окно: главное окно кассы пересоздаётся.
   win.webContents.setWindowOpenHandler(({ url }) => {
     const blank = !url || url === 'about:blank';
     if (!(isAllowedUrl(url) || (blank && isCapturing()))) {
@@ -67,7 +68,8 @@ function installWindowOpenHandler(win, { isAllowedUrl, partition, parent = null,
       autoHideMenuBar: true,
       webPreferences: { partition, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
     };
-    if (parent && !parent.isDestroyed()) opts.parent = parent;
+    const par = typeof parent === 'function' ? parent() : parent;
+    if (par && !par.isDestroyed()) opts.parent = par;
     return { action: 'allow', overrideBrowserWindowOptions: opts };
   });
 }
