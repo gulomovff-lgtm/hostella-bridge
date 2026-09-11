@@ -189,6 +189,8 @@ class Portal {
         await this.load('/listok');
         if (this.atLogin()) return { status: 'need_login' };
         return this._departWithSheet(p, job);
+      case 'sheet':
+        return this._sheetAgain(p, job);
       case 'check':
         await this.load('/listok');
         if (this.atLogin()) return { status: 'need_login' };
@@ -244,6 +246,35 @@ class Portal {
       return out;
     } finally {
       if (cap) cap.dispose();
+    }
+  }
+
+  /**
+   * Лист убытия заново — гостю, выведенному раньше или без листа: страница
+   * выехавших /listokout, строка гостя, кнопка печати портала; окно листа
+   * скрытое, как при убытии. Не нашли на /listokout — `not_found`: лист есть
+   * только у выехавшего, активному портал печатает листок регистрации.
+   */
+  async _sheetAgain(p, job) {
+    await this.load('/listokout');
+    if (this.atLogin()) return { status: 'need_login' };
+    if (typeof this.uploadSheet !== 'function') return { status: 'error', message: 'загрузка листа не настроена' };
+    const cap = sheet.armSheetCapture(this.win(), { log: this.log });
+    try {
+      const res = await this.exec(scripts.buildSheetPrintScript({
+        guestName: p.guestName || p.fullName || '', passport: p.passport || '', sheet: true,
+      }));
+      const out = res && typeof res === 'object' ? res : { status: 'error' };
+      if (out.status !== 'printed') return out;
+      const got = await cap.result({ graceMs: 8000 });
+      if (!got.ok) return { status: 'no_sheet', code: got.code, message: got.message || '' };
+      const up = await this.uploadSheet({ guestId: (job && job.guestId) || p.guestId || '', passport: p.passport || '', pdf: got.pdf });
+      this.log.info(`[portal] лист убытия заново: ${up.path} (${got.bytes} байт)`);
+      return { status: 'done', sheet: { path: up.path, bytes: got.bytes, at: new Date().toISOString(), source: got.source } };
+    } catch (e) {
+      return { status: 'error', message: e.message };
+    } finally {
+      cap.dispose();
     }
   }
 

@@ -43,4 +43,10 @@ describe('emehmonSheet', () => {
     assert.equal((src.match(/__hostellaOpenWrapped/g) || []).length >= 4, true, 'заглушка должна стоять в одиночном и массовом убытии');
     assert.ok(src.includes('GUEST.sheet') && src.includes('DATA.sheet'));
   });
+
+  test('скрипт листа заново: страница выехавших, строка гостя, кнопка печати портала', () => {
+    const scripts = require('../electron/emehmonAutofill.js');
+    const src = scripts.buildSheetPrintScript({ guestName: 'X', passport: 'AB1', sheet: true });
+    for (const s of ['custom-print-btn', "status: 'not_found'", "status: 'no_print_btn'", "status: 'printed'", '__hostellaOpenWrapped']) assert.ok(src.includes(s), s);
+  });
 });

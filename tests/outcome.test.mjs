@@ -100,3 +100,20 @@ describe('лист убытия', () => {
     assert.equal(r.result.sheet, undefined);
   });
 });
+
+describe('лист убытия заново (sheet)', () => {
+  test('снят и загружен — done с листом; не найден среди выехавших — done not_found', () => {
+    const ok = classify('sheet', { status: 'done', sheet: { path: 't/h/b/m/sheets/g/a.pdf', bytes: 100, at: 'x', source: 'child' } });
+    assert.equal(ok.status, 'done');
+    assert.equal(ok.result.sheet.path, 't/h/b/m/sheets/g/a.pdf');
+    assert.equal(classify('sheet', { status: 'not_found' }).status, 'done');
+  });
+  test('портал не открыл лист или нет кнопки печати — failed с понятной причиной', () => {
+    const a = classify('sheet', { status: 'no_sheet', code: 'sheet_empty' });
+    assert.equal(a.status, 'failed');
+    assert.match(a.error.message, /не открыл лист/);
+    const b = classify('sheet', { status: 'no_print_btn' });
+    assert.equal(b.status, 'failed');
+    assert.match(b.error.message, /Кнопка печати/);
+  });
+});

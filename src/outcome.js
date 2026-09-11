@@ -24,6 +24,7 @@ const DONE = Object.freeze({
   arrival:   ['done', 'needs_decision', 'not_found', 'submit_unconfirmed'],
   probe:     ['valid', 'not_found'],
   departure: ['done', 'submitted', 'not_found', 'absent'],
+  sheet:     ['done', 'not_found'],
   check:     ['present', 'absent'],
   list:      ['ok'],
   tursbor:   ['ok'],
@@ -44,6 +45,8 @@ const DESCRIBE = Object.freeze({
   no_button: 'Кнопка выселения не найдена',
   no_checkout_btn: 'Кнопка Check-Out не найдена',
   multiple: 'В списке несколько подходящих строк — нужен человек',
+  no_print_btn: 'Кнопка печати листа на портале не найдена',
+  no_sheet: 'Портал не открыл лист убытия',
   timeout: 'Мастер не уложился в отведённое время',
   error: 'Сбой автоматики портала',
 });

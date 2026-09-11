@@ -998,4 +998,77 @@ function buildAutoArrivalScript(guest) {
 })();`;
 }
 
-module.exports = { buildAutofillScript, buildDepartureAutoScript, buildDepartureCheckScript, buildPassportCheckScript, buildListFetchScript, buildTursborFetchScript, buildDepartureBulkScript, buildAutoArrivalScript, buildRecalcScript };
+// ── Лист убытия заново: страница выехавших (/listokout) ─────────────────────
+// Гостю, выведенному раньше или без листа. Находит строку гостя в таблице
+// страницы, выделяет её и жмёт кнопку печати портала (#custom-print-btn) —
+// лист открывается окном, которое снимает emehmonSheet.js (флаг sheet:true).
+// Таблица ищется любая DataTable на странице: у /listokout id может отличаться
+// от /listok. Активному гостю портал печатает листок регистрации — это другой
+// документ, поэтому /listok здесь не смотрим.
+//   printed / need_login / no_table / not_found / multiple / no_print_btn / error
+function buildSheetPrintScript(guest) {
+  const G = JSON.stringify(guest || {});
+  return `(async function(){
+  var GUEST = ${G};
+  var $ = window.jQuery || window.$;
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function norm(s){ return (s||'').replace(/\\s/g,'').toUpperCase(); }
+  try {
+    if ((location.pathname||'').indexOf('login') !== -1 || document.querySelector('input[type="password"]')) {
+      return { status: 'need_login' };
+    }
+    // Печать глушим со стороны родителя: лист снимает main-процесс / мост
+    // (emehmonSheet.js), диалог печати некому закрыть.
+    if (GUEST.sheet && !window.__hostellaOpenWrapped) {
+      window.__hostellaOpenWrapped = true;
+      var _open = window.open;
+      window.open = function(){
+        var w = _open.apply(window, arguments);
+        try { if (w) { w.print = function(){ try { w.__hostellaPrintWanted = true; } catch(e){} }; } } catch(e){}
+        return w;
+      };
+      var _print = window.print;
+      window.print = function(){ if (window.__hostellaSheetOff) { return _print.apply(window, arguments); } window.__hostellaPrintWanted = true; };
+    }
+    function getTable(){
+      try {
+        if (!($ && $.fn && $.fn.dataTable)) return null;
+        if ($.fn.dataTable.isDataTable('#listok-table')) return $('#listok-table').DataTable();
+        var all = $.fn.dataTable.tables({ api: true });
+        return (all && all.tables && all.tables().count() > 0) ? all : null;
+      } catch(e){ return null; }
+    }
+    var table = null;
+    for (var i=0;i<20 && !table;i++){ table = getTable(); if(!table){ await sleep(400); } }
+    if (!table) return { status: 'no_table' };
+    try { table.page.len(-1).draw(false); } catch(e){}
+    await sleep(300);
+    var gp = norm(GUEST.passport), gn = norm(GUEST.guestName || GUEST.fullName);
+    if (!gp && !gn) return { status: 'not_found' };
+    var hits = 0;
+    table.rows().every(function(){
+      var d = this.data() || {};
+      var rp = norm(d.passport_numb || d.passport_full || d.passport);
+      var rn = norm(d.guest || d.guestname || d.fio);
+      if (!rp && !rn && d && typeof d === 'object') {
+        var vals = Object.keys(d).map(function(k){ return norm(String(d[k] == null ? '' : d[k])); });
+        if (gp && vals.indexOf(gp) !== -1) rp = gp;
+        if (gn && vals.indexOf(gn) !== -1) rn = gn;
+      }
+      if ((gp && rp && rp===gp) || (gn && rn && rn===gn)) {
+        try { this.select(); $(this.node()).addClass('selected'); } catch(e){}
+        hits++;
+      }
+    });
+    if (hits === 0) return { status: 'not_found' };
+    if (hits > 1) return { status: 'multiple' };
+    var btn = document.getElementById('custom-print-btn')
+      || Array.prototype.slice.call(document.querySelectorAll('button, a.btn')).filter(function(b){ return /print|chop|печат/i.test((b.id||'') + ' ' + (b.textContent||'')); })[0];
+    if (!btn) return { status: 'no_print_btn' };
+    try { $(btn).trigger('click'); } catch(e){ btn.click(); }
+    return { status: 'printed' };
+  } catch(e){ return { status: 'error', message: (e && e.message) || String(e) }; }
+})();`;
+}
+
+module.exports = { buildAutofillScript, buildDepartureAutoScript, buildDepartureCheckScript, buildPassportCheckScript, buildListFetchScript, buildTursborFetchScript, buildDepartureBulkScript, buildAutoArrivalScript, buildRecalcScript, buildSheetPrintScript };
