@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('bridge', {
   sweepNow: () => ipcRenderer.invoke('sweep-now'),
   setAutostart: (on) => ipcRenderer.invoke('set-autostart', on),
   openLogs: () => ipcRenderer.invoke('open-logs'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
   quit: () => ipcRenderer.invoke('quit'),
   onState: (cb) => {
     const h = (_e, s) => cb(s);

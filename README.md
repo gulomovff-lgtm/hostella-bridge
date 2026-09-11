@@ -41,6 +41,8 @@
    капчу и «Войти» нажимает человек. Сессия портала живёт долго.
 6. Мост сворачивается в трей и запускается вместе с Windows. Касса видит его
    «в сети», пока heartbeat моложе 90 секунд.
+7. Обновляется сам с GitHub Releases (`gulomovff-lgtm/hostella-bridge`): тихо
+   скачивает и ставит, когда очередь свободна и никто не вводит капчу.
 
 Пароль от e-mehmon хранится только на этом компьютере, зашифрованным
 средствами Windows (DPAPI). В Firestore его нет ни в каком виде. Refresh
@@ -62,6 +64,9 @@ token моста — там же.
 npm install
 npm test                      # чистые модули: кодек REST, исходы, очередь, сессия, хранилище
 npm start                     # Electron, рабочий проект
+npm run dist                  # установщик в release/, без публикации
+npm run release               # установщик + черновик релиза на GitHub (нужен GH_TOKEN);
+                              # черновик публикуют: gh release edit vX.Y.Z --repo gulomovff-lgtm/hostella-bridge --draft=false
 npm run start:demo            # Electron против эмуляторов hostella-cloud
 npm run core:demo -- pair <код>            # ядро без Electron: подключение
 npm run core:demo -- run [scenarios.json]  # ядро без Electron: очередь со stub-порталом

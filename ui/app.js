@@ -57,6 +57,8 @@
     $('w-err').hidden = !err;
     if (err) $('w-err').textContent = `${err.kind === 'heartbeat' ? 'Heartbeat' : err.kind === 'poll' ? 'Опрос очереди' : 'Запись итога'}: ${err.message} (${fmt(err.at)})`;
     $('autostart').checked = !!s.autostart;
+    $('upd-row').hidden = !s.updateReady;
+    if (s.updateReady) $('upd-note').textContent = `Скачана версия ${s.updateReady}. Поставится сама, когда очередь свободна.`;
     $('btn-sweep').disabled = !w;
   }
 
@@ -116,6 +118,7 @@
   $('btn-sweep').addEventListener('click', async () => { await window.bridge.sweepNow(); refresh(); });
   $('autostart').addEventListener('change', async (e) => { await window.bridge.setAutostart(e.target.checked); });
   $('btn-logs').addEventListener('click', () => window.bridge.openLogs());
+  $('btn-update').addEventListener('click', () => window.bridge.installUpdate());
   $('btn-quit').addEventListener('click', () => {
     if (confirm('Выйти? Пока мост выключен, касса не сможет регистрировать гостей в e-mehmon.')) window.bridge.quit();
   });

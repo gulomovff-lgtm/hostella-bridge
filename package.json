@@ -12,7 +12,8 @@
     "start:demo": "electron . --demo",
     "test": "node --test \"tests/**/*.test.mjs\"",
     "core:demo": "node scripts/core-run.mjs --demo",
-    "dist": "electron-builder build --win --publish never"
+    "dist": "electron-builder build --win --publish never",
+    "release": "electron-builder build --win --publish always"
   },
   "build": {
     "appId": "com.hostella.bridge",
@@ -50,7 +51,8 @@
     }
   },
   "dependencies": {
-    "electron-log": "^5.0.0"
+    "electron-log": "^5.0.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "electron": "^28.0.0",

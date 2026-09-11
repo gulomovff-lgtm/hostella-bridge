@@ -16,6 +16,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const log = require('electron-log');
+const { autoUpdater } = require('electron-updater');
 
 const { profileFor, TIMING, VERSION } = require('./src/config');
 const { Store, safeStorageCodec } = require('./src/store');
@@ -46,6 +47,7 @@ let tray = null;
 let win = null;
 let quitting = false;
 let retryTimer = null;
+let updateReady = null; // версия, скачанная и готовая к установке
 const ui = { sessionOk: false, sessionReason: null, sessionMessage: '', starting: false };
 
 // ── Состояние для окна и трея ─────────────────────────────────────────────
@@ -66,6 +68,7 @@ function snapshot() {
       login: (store && store.get('portalLogin')) || '',
     },
     autostart: app.isPackaged ? !!app.getLoginItemSettings().openAtLogin : false,
+    updateReady,
     logFile: safeLogPath(),
   };
 }
@@ -115,6 +118,7 @@ function updateTray(s) {
     { label: 'Войти в e-mehmon…', click: () => openPortalLogin(), enabled: !!portal || !!s.paired },
     { label: 'Проверить очередь сейчас', click: () => worker && worker.tick().catch(() => {}), enabled: !!worker },
     { type: 'separator' },
+    ...(updateReady ? [{ label: `Обновить до ${updateReady} и перезапустить`, click: () => installUpdate('меню') }] : []),
     { label: 'Журнал', click: () => { const f = safeLogPath(); if (f) shell.showItemInFolder(f); } },
     { label: 'Выйти', click: () => { quitting = true; app.quit(); } },
   ]));
@@ -234,6 +238,41 @@ function stopWorker() {
   ui.sessionOk = false; ui.sessionReason = null; ui.sessionMessage = '';
 }
 
+// ── Обновления ────────────────────────────────────────────────────────────
+//
+// Мост стоит на стойке месяцами, и версию на нём никто не проверяет. Поэтому
+// как в кассе: тихо скачать, поставить, когда очередь свободна и кассир не
+// в окне входа. Установщик перезапускает мост сам (runAfterFinish),
+// автозапуск поднимает его после перезагрузки Windows.
+
+function installUpdate(reason) {
+  if (!updateReady || quitting) return;
+  if (worker && worker.state.busy) return;              // задача в портале — не рвём
+  if (portal && portal._loginMode) return;               // кассир вводит капчу
+  log.info(`[updater] ставлю ${updateReady} (${reason})`);
+  quitting = true;
+  if (worker) worker.stop();
+  setTimeout(() => { try { autoUpdater.quitAndInstall(true, true); } catch (e) { log.error('[updater] quitAndInstall:', e.message); quitting = false; } }, 1000);
+}
+
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.logger = log;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', (info) => {
+    updateReady = (info && info.version) || 'новой версии';
+    log.info('[updater] скачано', updateReady);
+    broadcast();
+    installUpdate('скачано');
+  });
+  autoUpdater.on('error', (e) => log.warn('[updater]', (e && e.message) || e));
+  const check = () => autoUpdater.checkForUpdates().catch((e) => log.warn('[updater] проверка:', e.message));
+  setTimeout(check, 30 * 1000);
+  setInterval(check, 6 * 60 * 60 * 1000);
+  setInterval(() => installUpdate('очередь свободна'), 60 * 1000);
+}
+
 // ── IPC от окна настроек ──────────────────────────────────────────────────
 
 ipcMain.handle('state', () => snapshot());
@@ -292,8 +331,11 @@ ipcMain.handle('sweep-now', async () => {
   return { ok: true };
 });
 
+ipcMain.handle('install-update', async () => { installUpdate('окно'); return { ok: !!updateReady }; });
+
 ipcMain.handle('set-autostart', async (_e, on) => {
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: process.execPath });
+  // `--hidden`: при входе в Windows мост поднимается в трей, окно не мешает.
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: process.execPath, args: ['--hidden'] });
   broadcast();
   return { ok: true };
 });
@@ -310,9 +352,10 @@ app.whenReady().then(async () => {
   // Первый запуск после установки — включаем автозапуск: мост должен
   // подниматься вместе с компьютером стойки, а не когда о нём вспомнят.
   if (app.isPackaged && !store.get('autostartSet')) {
-    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
+    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: ['--hidden'] });
     store.set('autostartSet', true);
   }
+  setupUpdates();
   // `--pair=КОД` — подключение без окна (установка администратором по
   // удалёнке, прогон на стенде). Делает ровно то же, что кнопка в окне.
   const pairArg = process.argv.find((a) => a.startsWith('--pair='));
