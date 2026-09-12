@@ -37,6 +37,15 @@ const built = path.join(OUT, `${productName} Setup ${version}.exe`);
 const dashed = `${productName.replace(/\s+/g, '-')}-Setup-${version}.exe`;
 const latest = path.join(OUT, 'latest.yml');
 if (!fs.existsSync(built)) { console.error(`нет ${built} — сначала npm run dist`); process.exit(2); }
+// Подпись: если сертификат задан (CSC_LINK / WIN_CSC_LINK), неподписанный
+// установщик не публикуется — значит подпись не сработала, и молча выкладывать
+// нельзя: обновление у кассиров установилось бы без проверки издателя.
+// Без сертификата проверка не запускается: сегодня сборки не подписаны, и это
+// записано в README («Подпись установщика»), а не спрятано.
+if (process.env.CSC_LINK || process.env.WIN_CSC_LINK) {
+  const status = execFileSync('powershell', ['-NoProfile', '-Command', `(Get-AuthenticodeSignature -LiteralPath '${built}').Status`], { encoding: 'utf8' }).trim();
+  if (status !== 'Valid') { console.error(`установщик не подписан (${status}), хотя сертификат задан — публиковать нельзя`); process.exit(2); }
+}
 if (!fs.existsSync(latest) || !fs.readFileSync(latest, 'utf8').includes(`version: ${version}`)) {
   console.error(`release/latest.yml не от версии ${version} — сначала npm run dist`); process.exit(2);
 }
