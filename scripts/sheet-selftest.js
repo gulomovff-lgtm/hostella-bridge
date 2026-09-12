@@ -4,14 +4,17 @@
  *
  *   npx electron scripts/sheet-selftest.js [каталог-для-pdf]
  *
- * Локальный HTTP-сервер играет портал: страница «списка» и страница «листа»,
- * которая, как настоящая, зовёт window.print() при загрузке. Три способа,
- * которыми портал может открыть лист, проверяются по очереди:
+ * Локальный HTTP-сервер играет портал: страница «списка», страница «листа»,
+ * которая, как настоящая, зовёт window.print() при загрузке, и готовый PDF.
+ * Способы, которыми портал может отдать лист, проверяются по очереди:
  *   A. window.open(адрес) — лист грузится своей страницей и печатает сам;
  *   B. window.open('') + document.write(...) + print() — окно без адреса;
- *   C. window.print() на самой странице списка.
- * Успех: в каждом случае получен непустой PDF, диалог печати не показан
- * (заглушка поставила метку), лишних окон не осталось.
+ *   C. window.print() на самой странице списка;
+ *   D. window.open(PDF как вложение) — у Chromium это загрузка с диалогом «Сохранить»;
+ *   E. window.open(PDF inline) — встроенный просмотрщик;
+ *   F. переход страницы списка на PDF-вложение — загрузка без окна.
+ * Успех: везде получен непустой PDF, диалогов печати и сохранения нет,
+ * лишних окон не осталось.
  */
 const { app, BrowserWindow } = require('electron');
 const http = require('node:http');
@@ -32,6 +35,20 @@ const SHEET_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Chiq
 <p>Ushbu varaqa avtomatik shakllantirildi.</p>
 </body></html>`;
 
+// Минимальный PDF (без xref — для загрузки достаточно), с запасом по размеру.
+const PDF_BYTES = Buffer.from([
+  '%PDF-1.4',
+  '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+  '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+  '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >> endobj',
+  '4 0 obj << /Length 44 >> stream',
+  'BT /F1 24 Tf 72 720 Td (Chiqish varaqasi) Tj ET',
+  'endstream endobj',
+  '% ' + 'x'.repeat(1200),
+  'trailer << /Root 1 0 R >>',
+  '%%EOF',
+].join('\n'));
+
 const LIST_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>listok</title></head><body>
 <h1>Ro‘yxat</h1>
 <script>
@@ -42,11 +59,20 @@ const LIST_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>listo
     setTimeout(function(){ try { w.print(); } catch(e){} }, 200);
   };
   window.openC = function(){ setTimeout(function(){ window.print(); }, 100); };
+  window.openD = function(){ window.open(location.origin + '/sheet.pdf?attach=1', '_blank'); };
+  window.openE = function(){ window.open(location.origin + '/sheet.pdf', '_blank'); };
+  window.openF = function(){ location.href = location.origin + '/sheet.pdf?attach=1'; };
 </script></body></html>`;
 
 function serve() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
+      if (req.url.startsWith('/sheet.pdf')) {
+        res.setHeader('Content-Type', 'application/pdf');
+        if (/attach=1/.test(req.url)) res.setHeader('Content-Disposition', 'attachment; filename="chiqish.pdf"');
+        res.end(PDF_BYTES);
+        return;
+      }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.end(req.url.startsWith('/sheet') ? SHEET_HTML : LIST_HTML);
     });
@@ -56,7 +82,7 @@ function serve() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function scenario(win, name, trigger, base) {
+async function scenario(win, name, trigger, base, expectSource) {
   const before = BrowserWindow.getAllWindows().length;
   await win.loadURL(`${base}/`);
   const cap = sheet.armSheetCapture(win, { log: console, timeoutMs: 15000 });
@@ -64,19 +90,27 @@ async function scenario(win, name, trigger, base) {
   // таблицу списка (её тут нет — вернёт no_table через несколько секунд).
   win.webContents.executeJavaScript(scripts.buildDepartureAutoScript({ sheet: true, print: true, guestName: 'X', passport: 'AB1234567' }), true).catch(() => {});
   await wait(300);
-  await win.webContents.executeJavaScript(`${trigger}()`, true);
+  await win.webContents.executeJavaScript(`${trigger}()`, true).catch(() => {});
   const got = await cap.result({ graceMs: 4000 });
   let stubbed = null;
-  try {
-    const target = cap.child && !cap.child.isDestroyed() ? cap.child.webContents : win.webContents;
-    stubbed = await target.executeJavaScript('!!window.__hostellaPrintWanted', true);
-  } catch { stubbed = null; }
+  if (expectSource !== 'download') {
+    // У окна, чья навигация стала загрузкой, executeJavaScript не вернётся — там не спрашиваем.
+    try {
+      const target = cap.child && !cap.child.isDestroyed() ? cap.child.webContents : win.webContents;
+      stubbed = await Promise.race([target.executeJavaScript('!!window.__hostellaPrintWanted', true), wait(2000).then(() => null)]);
+    } catch { stubbed = null; }
+  }
   const childUrl = cap.url;
   cap.dispose();
-  await wait(200);
+  await wait(300);
   const after = BrowserWindow.getAllWindows().length;
   const okPdf = got.ok && got.bytes > 800 && got.pdf.slice(0, 5).toString() === '%PDF-';
-  const result = { scenario: name, ok: !!(okPdf && stubbed && after === before), got: { ok: got.ok, code: got.code, bytes: got.bytes, source: got.source }, stubbed, childUrl, windowsBefore: before, windowsAfter: after };
+  const needStub = expectSource !== 'download';
+  const result = {
+    scenario: name,
+    ok: !!(okPdf && got.source === expectSource && (!needStub || stubbed) && after === before),
+    got: { ok: got.ok, code: got.code, bytes: got.bytes, source: got.source }, stubbed, childUrl, windowsBefore: before, windowsAfter: after,
+  };
   if (got.ok && outDir) {
     fs.mkdirSync(outDir, { recursive: true });
     fs.writeFileSync(path.join(outDir, `selftest-${name}.pdf`), got.pdf);
@@ -93,9 +127,12 @@ app.whenReady().then(async () => {
   sheet.installWindowOpenHandler(win, { isAllowedUrl: (u) => String(u || '').startsWith(base), partition: part, log: console });
   let allOk = true;
   try {
-    allOk = (await scenario(win, 'A-url-child', 'openA', base)) && allOk;
-    allOk = (await scenario(win, 'B-blank-write', 'openB', base)) && allOk;
-    allOk = (await scenario(win, 'C-parent-print', 'openC', base)) && allOk;
+    allOk = (await scenario(win, 'A-url-child', 'openA', base, 'child')) && allOk;
+    allOk = (await scenario(win, 'B-blank-write', 'openB', base, 'child')) && allOk;
+    allOk = (await scenario(win, 'C-parent-print', 'openC', base, 'parent')) && allOk;
+    allOk = (await scenario(win, 'D-pdf-attachment', 'openD', base, 'download')) && allOk;
+    allOk = (await scenario(win, 'E-pdf-inline', 'openE', base, 'download')) && allOk;
+    allOk = (await scenario(win, 'F-parent-download', 'openF', base, 'download')) && allOk;
   } catch (e) {
     console.log(JSON.stringify({ error: e.message }));
     allOk = false;
