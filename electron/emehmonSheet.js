@@ -32,6 +32,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+/** Preload окон портала: подмена print до скриптов страницы (и во фреймах). */
+const PRELOAD = path.join(__dirname, 'emehmonSheetPreload.js');
+
 /** Заглушка печати: вместо диалога — метка, которую читает main-процесс. */
 const PRINT_STUB = `(function(){
   try {
@@ -57,6 +60,23 @@ const isCapturing = () => capturing > 0;
 let pending = null;
 const hookedSessions = new WeakSet();
 
+let ipcReady = false;
+/** Preload спрашивает у main синхронно, идёт ли снятие: ответ регистрируем один раз. */
+function ensureIpc() {
+  if (ipcReady) return;
+  ipcReady = true;
+  try {
+    const { ipcMain } = require('electron');
+    ipcMain.on('hostella-sheet-armed', (event) => { event.returnValue = isCapturing(); });
+  } catch { /* вне main-процесса (тесты) IPC нет */ }
+}
+
+/** webPreferences для окон портала обоих приложений: заглушка печати до скриптов страницы, и во фреймах тоже. */
+function windowWebPreferences() {
+  ensureIpc();
+  return { preload: PRELOAD, nodeIntegrationInSubFrames: true };
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * executeJavaScript ждёт конца загрузки страницы; у окна, чья навигация стала
@@ -77,6 +97,7 @@ const evalIn = (wc, code, ms = 1500) => Promise.race([
  */
 function installWindowOpenHandler(win, { isAllowedUrl, partition, parent = null, log = console }) {
   // parent — окно или функция, возвращающая окно: главное окно кассы пересоздаётся.
+  ensureIpc();
   win.webContents.setWindowOpenHandler(({ url }) => {
     const blank = !url || url === 'about:blank';
     if (!(isAllowedUrl(url) || (blank && isCapturing()))) {
@@ -86,7 +107,7 @@ function installWindowOpenHandler(win, { isAllowedUrl, partition, parent = null,
     const opts = {
       show: !isCapturing(),
       autoHideMenuBar: true,
-      webPreferences: { partition, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
+      webPreferences: { partition, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, preload: PRELOAD, nodeIntegrationInSubFrames: true },
     };
     const par = typeof parent === 'function' ? parent() : parent;
     if (par && !par.isDestroyed()) opts.parent = par;
@@ -191,18 +212,62 @@ async function captureWindow(win, { deadline, log }) {
 }
 
 /**
+ * Лист из HTML, который портал отдаёт на POST /listok/print (скрипт убытия
+ * перехватывает его хуком $.ajax и отдаёт сюда). Портал рисовал бы его в
+ * скрытом iframe и звал печать; мы рисуем в скрытом окне той же сессии
+ * (стили и картинки портала подгружаются по базовому адресу), дорисовываем
+ * QR-коды так же, как портал, и снимаем PDF. Диалогу печати взяться неоткуда.
+ */
+async function renderSheetHtml({ html, ids = [], ses, log = console, timeoutMs = 15000 }) {
+  const { BrowserWindow } = require('electron');
+  const win = new BrowserWindow({
+    show: false, width: 900, height: 1200,
+    webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, preload: PRELOAD },
+  });
+  try {
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    const dataUrl = 'data:text/html;charset=utf-8;base64,' + Buffer.from(String(html || ''), 'utf8').toString('base64');
+    await Promise.race([
+      win.loadURL(dataUrl, { baseURLForDataURL: 'https://emehmon.uz/listok/print' }).catch(() => {}),
+      wait(timeoutMs),
+    ]);
+    const idList = (Array.isArray(ids) ? ids : []).map((x) => String(x)).slice(0, 50);
+    if (idList.length) {
+      // QR на листе портал рисует сам после загрузки (qrcodejs, identify-origin) — повторяем.
+      await evalIn(win.webContents, `new Promise(function(res){ try {
+        var ids = ${JSON.stringify(idList)};
+        function draw(){ try { ids.forEach(function(id){ var el = document.getElementById('qrcode-' + id); if (el && window.QRCode && !el.children.length) new QRCode(el, { text: 'https://emehmon.uz/identify-origin/hotel/' + id, width: 100, height: 100 }); }); } catch(e){} res(true); }
+        if (window.QRCode) return draw();
+        var s = document.createElement('script'); s.src = 'https://emehmon.uz/assets/libs/qrcodejs/qrcode.min.js'; s.onload = draw; s.onerror = function(){ res(false); };
+        document.head.appendChild(s);
+        setTimeout(function(){ res(false); }, 4000);
+      } catch(e){ res(false); } })`, 6000).catch(() => false);
+    }
+    await wait(SETTLE_MS);
+    return await capturePdf(win.webContents, { log, source: 'html' });
+  } catch (e) {
+    log.warn('[emehmon] лист из HTML не отрисован:', e.message);
+    return { ok: false, code: 'sheet_error', message: e.message };
+  } finally {
+    try { win.destroy(); } catch { /* ignore */ }
+  }
+}
+
+/**
  * Взвести захват на окне портала ПЕРЕД скриптом убытия.
  *
  * Возвращает { result(opts), dispose() }:
- *   result({ graceMs }) — ждёт файл или окно-потомок не дольше graceMs после
- *   вызова, иначе смотрит метку печати на родителе; отдаёт
- *   { ok:true, pdf:Buffer, bytes, source:'download'|'child'|'parent' } либо
+ *   result({ sheetHtml, sheetIds }) — лист из HTML, который перехватил скрипт
+ *   убытия (основной путь); result({ graceMs }) — ждёт файл или окно-потомок
+ *   не дольше graceMs, иначе смотрит метку печати на родителе; отдаёт
+ *   { ok:true, pdf:Buffer, bytes, source:'html'|'download'|'child'|'parent' } либо
  *   { ok:false, code: no_sheet | sheet_empty | sheet_error | sheet_gone | sheet_download }.
  *   dispose() — снимает слушатели, закрывает окно-потомок и возвращает
  *   странице настоящую печать (для ручного окна кассира).
  */
 function armSheetCapture(parentWin, { log = console, timeoutMs = SHEET_TIMEOUT_MS } = {}) {
   const wc = parentWin.webContents;
+  ensureIpc();
   hookSession(wc.session, log);
   capturing += 1;
   let child = null;
@@ -224,10 +289,10 @@ function armSheetCapture(parentWin, { log = console, timeoutMs = SHEET_TIMEOUT_M
   };
   wc.on('did-create-window', onCreate);
 
-  async function result({ graceMs = 8000 } = {}) {
+  async function result({ graceMs = 8000, sheetHtml = null, sheetIds = [] } = {}) {
     // Жёсткий предел на всё: ни одно ожидание внутри не должно пережить его.
     return Promise.race([
-      resultInner({ graceMs }),
+      sheetHtml ? renderSheetHtml({ html: sheetHtml, ids: sheetIds, ses: wc.session, log }) : resultInner({ graceMs }),
       wait(timeoutMs + 2000).then(() => ({ ok: false, code: 'sheet_timeout' })),
     ]);
   }
@@ -275,4 +340,4 @@ function sheetFileName({ passport = '', at = new Date() } = {}) {
   return `${p}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.pdf`;
 }
 
-module.exports = { installWindowOpenHandler, armSheetCapture, isCapturing, sheetFileName, PRINT_STUB, SHEET_TIMEOUT_MS };
+module.exports = { installWindowOpenHandler, armSheetCapture, renderSheetHtml, windowWebPreferences, isCapturing, sheetFileName, PRINT_STUB, PRELOAD, SHEET_TIMEOUT_MS };

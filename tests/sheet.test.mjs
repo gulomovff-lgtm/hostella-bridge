@@ -50,3 +50,15 @@ describe('emehmonSheet', () => {
     for (const s of ['custom-print-btn', "status: 'not_found'", "status: 'no_print_btn'", "status: 'printed'", '__hostellaOpenWrapped']) assert.ok(src.includes(s), s);
   });
 });
+
+test('перехват печати портала: хук $.ajax в скриптах, preload и отрисовка HTML в модуле', () => {
+  const scripts = require('../electron/emehmonAutofill.js');
+  for (const src of [scripts.buildDepartureAutoScript({ sheet: true, print: true }), scripts.buildSheetPrintScript({ sheet: true })]) {
+    assert.ok(src.includes('__hostellaSheetHook') && src.includes('sheetHtml'));
+  }
+  assert.equal(typeof sheet.renderSheetHtml, 'function');
+  assert.deepEqual(Object.keys(sheet.windowWebPreferences()).sort(), ['nodeIntegrationInSubFrames', 'preload']);
+  assert.ok(fs.existsSync(sheet.PRELOAD));
+  const preload = fs.readFileSync(sheet.PRELOAD, 'utf8');
+  assert.ok(preload.includes('hostella-sheet-armed') && preload.includes('__hostellaPrintWanted'));
+});

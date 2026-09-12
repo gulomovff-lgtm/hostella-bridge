@@ -290,6 +290,28 @@ function buildDepartureAutoScript(guest) {
     // Лист убытия снимает в PDF main-процесс (emehmonSheet.js): окно листа он
     // держит скрытым, а диалог печати некому закрыть — печать глушим и здесь,
     // со стороны родителя: это страхует окно без адреса (document.write).
+    // Портал печатает лист так: POST /listok/print → HTML → скрытый iframe →
+    // iframe.print(). Перехватываем на уровне $.ajax: HTML забираем себе, а
+    // печать (iframe) не запускаем вовсе — диалогу неоткуда взяться. Лист
+    // рисует main-процесс / мост (emehmonSheet.renderSheetHtml).
+    if (GUEST.sheet && $ && $.ajax && !$.__hostellaSheetHook) {
+      $.__hostellaSheetHook = true;
+      var _ajax = $.ajax;
+      $.ajax = function(opts){
+        try {
+          var o = (typeof opts === 'string') ? { url: opts } : (opts || {});
+          if (/\\/listok\\/print(\\?|$)/.test(String(o.url || ''))) {
+            var onErr = o.error;
+            var patched = {};
+            for (var pk in o) patched[pk] = o[pk];
+            patched.success = function(html){ try { window.__hostellaSheetHtml = String(html || ''); window.__hostellaSheetIds = (o.data && o.data.ids) || []; window.__hostellaSheetCheckout = (o.data && o.data.checkout != null) ? String(o.data.checkout) : null; } catch(e){} };
+            patched.error = function(){ window.__hostellaSheetError = 'print_fetch_failed'; if (typeof onErr === 'function') { try { onErr.apply(this, arguments); } catch(e){} } };
+            return _ajax.call($, patched);
+          }
+        } catch(e){}
+        return _ajax.apply($, arguments);
+      };
+    }
     if (GUEST.sheet && !window.__hostellaOpenWrapped) {
       window.__hostellaOpenWrapped = true;
       var _open = window.open;
@@ -364,8 +386,17 @@ function buildDepartureAutoScript(guest) {
 
     // 8) закрытие модалки = успех
     function modalGone(){ return !document.querySelector('.confirm input.payment-input') && !document.querySelector('.modal.show input.payment-input'); }
-    for (var m=0;m<30;m++){ if (modalGone()){ return { status: 'done' }; } await sleep(400); }
-    return { status: 'submitted' };
+    // Лист: после Check-Out портал зовёт печать (POST /listok/print → iframe);
+    // хук $.ajax выше забирает HTML себе — ждём его и отдаём main-процессу.
+    async function finishWithSheet(status){
+      if (!GUEST.sheet) return { status: status };
+      for (var w=0; w<27; w++){ if (window.__hostellaSheetHtml || window.__hostellaSheetError) break; await sleep(300); }
+      return { status: status, sheetHtml: window.__hostellaSheetHtml || null, sheetIds: window.__hostellaSheetIds || null,
+               sheetCheckout: window.__hostellaSheetCheckout == null ? null : String(window.__hostellaSheetCheckout),
+               sheetFetchError: window.__hostellaSheetError || null };
+    }
+    for (var m=0;m<30;m++){ if (modalGone()){ return await finishWithSheet('done'); } await sleep(400); }
+    return await finishWithSheet('submitted');
   } catch(e){
     return { status: 'error', message: (e && e.message) || String(e) };
   }
@@ -759,6 +790,28 @@ function buildDepartureBulkScript(payload) {
     // Лист убытия снимает в PDF main-процесс (emehmonSheet.js): окно листа он
     // держит скрытым, а диалог печати некому закрыть — печать глушим и здесь,
     // со стороны родителя: это страхует окно без адреса (document.write).
+    // Портал печатает лист так: POST /listok/print → HTML → скрытый iframe →
+    // iframe.print(). Перехватываем на уровне $.ajax: HTML забираем себе, а
+    // печать (iframe) не запускаем вовсе — диалогу неоткуда взяться. Лист
+    // рисует main-процесс / мост (emehmonSheet.renderSheetHtml).
+    if (DATA.sheet && $ && $.ajax && !$.__hostellaSheetHook) {
+      $.__hostellaSheetHook = true;
+      var _ajax = $.ajax;
+      $.ajax = function(opts){
+        try {
+          var o = (typeof opts === 'string') ? { url: opts } : (opts || {});
+          if (/\\/listok\\/print(\\?|$)/.test(String(o.url || ''))) {
+            var onErr = o.error;
+            var patched = {};
+            for (var pk in o) patched[pk] = o[pk];
+            patched.success = function(html){ try { window.__hostellaSheetHtml = String(html || ''); window.__hostellaSheetIds = (o.data && o.data.ids) || []; window.__hostellaSheetCheckout = (o.data && o.data.checkout != null) ? String(o.data.checkout) : null; } catch(e){} };
+            patched.error = function(){ window.__hostellaSheetError = 'print_fetch_failed'; if (typeof onErr === 'function') { try { onErr.apply(this, arguments); } catch(e){} } };
+            return _ajax.call($, patched);
+          }
+        } catch(e){}
+        return _ajax.apply($, arguments);
+      };
+    }
     if (DATA.sheet && !window.__hostellaOpenWrapped) {
       window.__hostellaOpenWrapped = true;
       var _open = window.open;
@@ -812,8 +865,16 @@ function buildDepartureBulkScript(payload) {
     if (!btn) return { status: 'no_button', selected: selected };
     btn.click();
     function modalGone(){ return !document.querySelector('.confirm input.payment-input') && !document.querySelector('.modal.show input.payment-input'); }
-    for (var m=0;m<40;m++){ if (modalGone()){ return { status: 'done', selected: selected, requested: LIST.length }; } await sleep(400); }
-    return { status: 'submitted', selected: selected, requested: LIST.length };
+    async function finishWithSheet(status){
+      var out = { status: status, selected: selected, requested: LIST.length };
+      if (!DATA.sheet) return out;
+      for (var w=0; w<27; w++){ if (window.__hostellaSheetHtml || window.__hostellaSheetError) break; await sleep(300); }
+      out.sheetHtml = window.__hostellaSheetHtml || null; out.sheetIds = window.__hostellaSheetIds || null;
+      out.sheetFetchError = window.__hostellaSheetError || null;
+      return out;
+    }
+    for (var m=0;m<40;m++){ if (modalGone()){ return await finishWithSheet('done'); } await sleep(400); }
+    return await finishWithSheet('submitted');
   } catch(e){ return { status: 'error', message: (e && e.message) || String(e) }; }
 })();`;
 }
@@ -1035,6 +1096,28 @@ function buildSheetPrintScript(guest) {
     }
     // Печать глушим со стороны родителя: лист снимает main-процесс / мост
     // (emehmonSheet.js), диалог печати некому закрыть.
+    // Портал печатает лист так: POST /listok/print → HTML → скрытый iframe →
+    // iframe.print(). Перехватываем на уровне $.ajax: HTML забираем себе, а
+    // печать (iframe) не запускаем вовсе — диалогу неоткуда взяться. Лист
+    // рисует main-процесс / мост (emehmonSheet.renderSheetHtml).
+    if (GUEST.sheet && $ && $.ajax && !$.__hostellaSheetHook) {
+      $.__hostellaSheetHook = true;
+      var _ajax = $.ajax;
+      $.ajax = function(opts){
+        try {
+          var o = (typeof opts === 'string') ? { url: opts } : (opts || {});
+          if (/\\/listok\\/print(\\?|$)/.test(String(o.url || ''))) {
+            var onErr = o.error;
+            var patched = {};
+            for (var pk in o) patched[pk] = o[pk];
+            patched.success = function(html){ try { window.__hostellaSheetHtml = String(html || ''); window.__hostellaSheetIds = (o.data && o.data.ids) || []; window.__hostellaSheetCheckout = (o.data && o.data.checkout != null) ? String(o.data.checkout) : null; } catch(e){} };
+            patched.error = function(){ window.__hostellaSheetError = 'print_fetch_failed'; if (typeof onErr === 'function') { try { onErr.apply(this, arguments); } catch(e){} } };
+            return _ajax.call($, patched);
+          }
+        } catch(e){}
+        return _ajax.apply($, arguments);
+      };
+    }
     if (GUEST.sheet && !window.__hostellaOpenWrapped) {
       window.__hostellaOpenWrapped = true;
       var _open = window.open;
@@ -1061,7 +1144,10 @@ function buildSheetPrintScript(guest) {
     await sleep(300);
     var gp = norm(GUEST.passport), gn = norm(GUEST.guestName || GUEST.fullName);
     if (!gp && !gn) return { status: 'not_found' };
-    var hits = 0;
+    // Гость на странице выехавших бывает много раз (жил у нас не однажды):
+    // берём строку с датой выезда гостя, иначе самую свежую по выезду.
+    var wantDay = String(GUEST.checkOutDay || '');
+    var cands = [];
     table.rows().every(function(){
       var d = this.data() || {};
       var rp = norm(d.passport_numb || d.passport_full || d.passport);
@@ -1072,17 +1158,27 @@ function buildSheetPrintScript(guest) {
         if (gn && vals.indexOf(gn) !== -1) rn = gn;
       }
       if ((gp && rp && rp===gp) || (gn && rn && rn===gn)) {
-        try { this.select(); $(this.node()).addClass('selected'); } catch(e){}
-        hits++;
+        var outAt = String(d.check_out || d.checkout || d.chiqish || '');
+        var m = /(\\d{2})\\.(\\d{2})\\.(\\d{4})(?:\\s+(\\d{2}):(\\d{2})(?::(\\d{2}))?)?/.exec(outAt);
+        var key = m ? (m[3] + m[2] + m[1] + (m[4]||'00') + (m[5]||'00') + (m[6]||'00')) : '';
+        cands.push({ row: this, day: m ? (m[1] + '.' + m[2] + '.' + m[3]) : '', key: key });
       }
     });
-    if (hits === 0) return { status: 'not_found' };
-    if (hits > 1) return { status: 'multiple' };
+    if (!cands.length) return { status: 'not_found' };
+    var pick = null;
+    if (wantDay) { for (var ci=0; ci<cands.length; ci++) { if (cands[ci].day === wantDay) { pick = cands[ci]; break; } } }
+    if (!pick) { cands.sort(function(a,b){ return b.key.localeCompare(a.key); }); pick = cands[0]; }
+    try { pick.row.select(); $(pick.row.node()).addClass('selected'); } catch(e){}
     var btn = document.getElementById('custom-print-btn')
       || Array.prototype.slice.call(document.querySelectorAll('button, a.btn')).filter(function(b){ return /print|chop|печат/i.test((b.id||'') + ' ' + (b.textContent||'')); })[0];
     if (!btn) return { status: 'no_print_btn' };
     try { $(btn).trigger('click'); } catch(e){ btn.click(); }
-    return { status: 'printed' };
+    // Печать портала перехвачена хуком $.ajax выше: ждём HTML листа.
+    if (GUEST.sheet) {
+      for (var w=0; w<27; w++){ if (window.__hostellaSheetHtml || window.__hostellaSheetError) break; await sleep(300); }
+      if (window.__hostellaSheetError && !window.__hostellaSheetHtml) return { status: 'no_sheet', message: window.__hostellaSheetError };
+    }
+    return { status: 'printed', sheetHtml: window.__hostellaSheetHtml || null, sheetIds: window.__hostellaSheetIds || null, pickedDay: pick.day, candidates: cands.length };
   } catch(e){ return { status: 'error', message: (e && e.message) || String(e) }; }
 })();`;
 }

@@ -12,7 +12,9 @@
  *   C. window.print() на самой странице списка;
  *   D. window.open(PDF как вложение) — у Chromium это загрузка с диалогом «Сохранить»;
  *   E. window.open(PDF inline) — встроенный просмотрщик;
- *   F. переход страницы списка на PDF-вложение — загрузка без окна.
+ *   F. переход страницы списка на PDF-вложение — загрузка без окна;
+ *   G. как настоящий портал: $.ajax POST /listok/print → HTML → скрытый iframe →
+ *      iframe.print(); хук скрипта убытия забирает HTML, iframe не создаётся.
  * Успех: везде получен непустой PDF, диалогов печати и сохранения нет,
  * лишних окон не осталось.
  */
@@ -62,11 +64,26 @@ const LIST_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>listo
   window.openD = function(){ window.open(location.origin + '/sheet.pdf?attach=1', '_blank'); };
   window.openE = function(){ window.open(location.origin + '/sheet.pdf', '_blank'); };
   window.openF = function(){ location.href = location.origin + '/sheet.pdf?attach=1'; };
+  // Портал: jQuery.ajax + printCheckout из /listokout (упрощённо, без QR).
+  window.$ = window.jQuery = { ajax: function(o){ fetch(o.url, { method: 'POST' }).then(function(r){ return r.text(); }).then(function(h){ if (o.success) o.success(h); }).catch(function(){ if (o.error) o.error(); }); } };
+  window.printCheckout = function(ids){
+    var iframe = document.createElement('iframe'); iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = 'none'; document.body.appendChild(iframe);
+    $.ajax({ type: 'POST', url: location.origin + '/listok/print', data: { ids: ids, checkout: 0 }, success: function(html){
+      var doc = iframe.contentWindow.document; doc.open(); doc.write(html); doc.close();
+      setTimeout(function(){ window.__hostellaIframePrinted = true; try { iframe.contentWindow.print(); } catch(e){} document.body.removeChild(iframe); }, 200);
+    } });
+  };
+  window.openG = function(){ printCheckout([1]); };
 </script></body></html>`;
 
 function serve() {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
+      if (req.url.startsWith('/listok/print')) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(SHEET_HTML.replace(' onload="window.print()"', '').replace('<p>', '<div id="qrcode-1"></div><p>'));
+        return;
+      }
       if (req.url.startsWith('/sheet.pdf')) {
         res.setHeader('Content-Type', 'application/pdf');
         if (/attach=1/.test(req.url)) res.setHeader('Content-Disposition', 'attachment; filename="chiqish.pdf"');
@@ -91,7 +108,18 @@ async function scenario(win, name, trigger, base, expectSource) {
   win.webContents.executeJavaScript(scripts.buildDepartureAutoScript({ sheet: true, print: true, guestName: 'X', passport: 'AB1234567' }), true).catch(() => {});
   await wait(300);
   await win.webContents.executeJavaScript(`${trigger}()`, true).catch(() => {});
-  const got = await cap.result({ graceMs: 4000 });
+  let got;
+  if (expectSource === 'html') {
+    // Как main-процесс: HTML листа приходит из скрипта, iframe портала не создаётся.
+    let html = null; let ids = [];
+    for (let i = 0; i < 20 && !html; i++) { await wait(250); html = await win.webContents.executeJavaScript('window.__hostellaSheetHtml || null', true).catch(() => null); }
+    ids = await win.webContents.executeJavaScript('window.__hostellaSheetIds || []', true).catch(() => []);
+    const iframePrinted = await win.webContents.executeJavaScript('!!window.__hostellaIframePrinted', true).catch(() => null);
+    got = html ? await cap.result({ sheetHtml: html, sheetIds: ids }) : { ok: false, code: 'no_html' };
+    got.iframePrinted = iframePrinted;
+  } else {
+    got = await cap.result({ graceMs: 4000 });
+  }
   let stubbed = null;
   if (expectSource !== 'download') {
     // У окна, чья навигация стала загрузкой, executeJavaScript не вернётся — там не спрашиваем.
@@ -105,11 +133,12 @@ async function scenario(win, name, trigger, base, expectSource) {
   await wait(300);
   const after = BrowserWindow.getAllWindows().length;
   const okPdf = got.ok && got.bytes > 800 && got.pdf.slice(0, 5).toString() === '%PDF-';
-  const needStub = expectSource !== 'download';
+  const needStub = expectSource !== 'download' && expectSource !== 'html';
+  if (expectSource === 'html' && got.iframePrinted) got.ok = false; // портал успел напечатать сам — хук не сработал
   const result = {
     scenario: name,
     ok: !!(okPdf && got.source === expectSource && (!needStub || stubbed) && after === before),
-    got: { ok: got.ok, code: got.code, bytes: got.bytes, source: got.source }, stubbed, childUrl, windowsBefore: before, windowsAfter: after,
+    got: { ok: got.ok, code: got.code, bytes: got.bytes, source: got.source, iframePrinted: got.iframePrinted }, stubbed, childUrl, windowsBefore: before, windowsAfter: after,
   };
   if (got.ok && outDir) {
     fs.mkdirSync(outDir, { recursive: true });
@@ -123,7 +152,7 @@ app.whenReady().then(async () => {
   const srv = await serve();
   const base = `http://127.0.0.1:${srv.address().port}`;
   const part = 'selftest-sheet';
-  const win = new BrowserWindow({ width: 900, height: 700, show: false, webPreferences: { partition: part, contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const win = new BrowserWindow({ width: 900, height: 700, show: false, webPreferences: { partition: part, contextIsolation: true, nodeIntegration: false, sandbox: true, ...sheet.windowWebPreferences() } });
   sheet.installWindowOpenHandler(win, { isAllowedUrl: (u) => String(u || '').startsWith(base), partition: part, log: console });
   let allOk = true;
   try {
@@ -133,6 +162,7 @@ app.whenReady().then(async () => {
     allOk = (await scenario(win, 'D-pdf-attachment', 'openD', base, 'download')) && allOk;
     allOk = (await scenario(win, 'E-pdf-inline', 'openE', base, 'download')) && allOk;
     allOk = (await scenario(win, 'F-parent-download', 'openF', base, 'download')) && allOk;
+    allOk = (await scenario(win, 'G-ajax-iframe-print', 'openG', base, 'html')) && allOk;
   } catch (e) {
     console.log(JSON.stringify({ error: e.message }));
     allOk = false;

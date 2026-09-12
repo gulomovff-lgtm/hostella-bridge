@@ -101,6 +101,7 @@ class Portal {
         partition: this.partition,
         contextIsolation: true, nodeIntegration: false, webSecurity: true,
         backgroundThrottling: false,
+        ...sheet.windowWebPreferences(), // заглушка печати до скриптов страницы, и во фреймах
       },
     });
     w.setMenuBarVisibility(false);
@@ -228,8 +229,12 @@ class Portal {
         amount: p.amount, payType: p.payType, print: withSheet, sheet: withSheet,
       }));
       const out = res && typeof res === 'object' ? res : { status: 'error' };
+      // HTML листа из скрипта (перехват $.ajax на /listok/print) — в итог задачи
+      // он не идёт: sanitize режет строки, да и кассе нужен PDF, а не разметка.
+      const html = out.sheetHtml; const ids = out.sheetIds;
+      delete out.sheetHtml; delete out.sheetIds;
       if (!cap || !['done', 'submitted'].includes(out.status)) return out;
-      const got = await cap.result({ graceMs: 8000 });
+      const got = await cap.result(html ? { sheetHtml: html, sheetIds: ids } : { graceMs: 8000 });
       if (!got.ok) {
         this.log.warn('[portal] лист убытия не снят:', got.code, got.message || '');
         out.sheetError = { code: got.code, message: got.message || '' };
@@ -265,8 +270,10 @@ class Portal {
         guestName: p.guestName || p.fullName || '', passport: p.passport || '', sheet: true,
       }));
       const out = res && typeof res === 'object' ? res : { status: 'error' };
+      const html = out.sheetHtml; const ids = out.sheetIds;
+      delete out.sheetHtml; delete out.sheetIds;
       if (out.status !== 'printed') return out;
-      const got = await cap.result({ graceMs: 8000 });
+      const got = await cap.result(html ? { sheetHtml: html, sheetIds: ids } : { graceMs: 8000 });
       if (!got.ok) return { status: 'no_sheet', code: got.code, message: got.message || '' };
       const up = await this.uploadSheet({ guestId: (job && job.guestId) || p.guestId || '', passport: p.passport || '', pdf: got.pdf });
       this.log.info(`[portal] лист убытия заново: ${up.path} (${got.bytes} байт)`);
