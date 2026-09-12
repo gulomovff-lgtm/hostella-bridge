@@ -55,5 +55,15 @@ describe('имя продукта', () => {
     assert.ok(stale >= 2 && stale <= 4, 'в main.js старое имя — только для снятия автозапуска и переноса настроек');
     assert.ok(main.includes("getLoginItemSettings({ path: process.execPath, args: AUTOSTART_ARGS })"), 'автозапуск читается без аргументов — галочка снова будет врать');
     assert.ok(fs.existsSync(at('../assets/icon.png')) && fs.existsSync(at('../assets/tray.png')));
+    // Значок установщика — многоразмерный .ico, а не ужатый PNG: иначе пиксели.
+    const ico = fs.readFileSync(at('../assets/icon.ico'));
+    assert.equal(ico.readUInt16LE(2), 1, 'не ICO');
+    assert.ok(ico.readUInt16LE(4) >= 6, 'в .ico меньше шести размеров');
+    assert.equal(pkg.build.win.icon, 'assets/icon.ico');
+    assert.equal(pkg.build.nsis.installerIcon, 'assets/icon.ico');
+    const html = fs.readFileSync(at('../ui/index.html'), 'utf8');
+    assert.ok(html.includes('-webkit-app-region:drag'), 'шапка окна должна быть заголовком: системной рамки нет');
+    assert.ok(main.includes("titleBarStyle: 'hidden'") && main.includes('titleBarOverlay'), 'окно без фирменной шапки');
+    assert.ok(fs.readFileSync(at('../ui/app.js'), 'utf8').includes('Соединение защищено'), 'о защите — одной строкой');
   });
 });

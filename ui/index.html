@@ -13,27 +13,36 @@
     --brand:#15846E; --brand-ink:#195D4B; --brand-soft:#EBF7F2; --mint:#1FC08F; --amber:#FFB829;
     --ok:#15846E; --ok-soft:#EBF7F2; --warn:#8A5A00; --warn-soft:#FFF4D6; --bad:#B42318; --bad-soft:#FDECEA;
     --isle:#000000; --isle-ink:#F5F7F2; --isle-mute:rgba(245,247,242,.68);
-    --radius:14px;
+    --radius:14px; --titlebar:64px;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
-  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; overflow:hidden; }
   h1, h2, .cap, .num, .pill-big { font-family:'HostiDisplay', system-ui, sans-serif; font-weight:600; }
 
-  /* Шапка — Void, как аватарка бренда */
-  header { background:var(--isle); color:var(--isle-ink); padding:16px 20px 14px; display:flex; align-items:center; gap:14px; flex-shrink:0; }
-  header .mark { width:44px; height:44px; flex-shrink:0; }
-  header h1 { font-size:19px; margin:0; letter-spacing:-.01em; line-height:1.1; }
-  header .sub { font-size:12px; color:var(--isle-mute); margin-top:3px; }
-  header .st { margin-left:auto; text-align:right; }
-  .pill-big { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:13px; background:rgba(245,247,242,.10); color:var(--isle-ink); white-space:nowrap; }
-  .pill-big::before { content:''; width:9px; height:9px; border-radius:50%; background:var(--isle-mute); flex-shrink:0; }
+  /* Шапка = заголовок окна: системной рамки нет, окно таскают за неё; справа
+     место под системные кнопки свернуть/развернуть/закрыть (titleBarOverlay). */
+  header { -webkit-app-region:drag; background:var(--isle); color:var(--isle-ink); height:var(--titlebar); padding:0 150px 0 18px; display:flex; align-items:center; gap:12px; flex-shrink:0; user-select:none; }
+  header .mark { width:36px; height:36px; flex-shrink:0; }
+  header h1 { font-size:17px; margin:0; letter-spacing:-.01em; line-height:1.1; }
+  header .sub { font-size:11.5px; color:var(--isle-mute); margin-top:2px; white-space:nowrap; }
+  header .st { margin-left:auto; display:flex; align-items:center; gap:8px; -webkit-app-region:no-drag; }
+  .pill-big { display:inline-flex; align-items:center; gap:8px; padding:5px 11px; border-radius:999px; font-size:12.5px; background:rgba(245,247,242,.10); color:var(--isle-ink); white-space:nowrap; }
+  .pill-big::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--isle-mute); flex-shrink:0; }
   .pill-big.ok::before { background:var(--mint); box-shadow:0 0 0 4px rgba(31,192,143,.18); }
   .pill-big.warn::before { background:var(--amber); }
   .pill-big.bad::before { background:#FF6B5B; }
-  header .meta { font-size:11px; color:var(--isle-mute); margin-top:6px; }
+  .lock { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--isle-mute); white-space:nowrap; cursor:help; }
+  .lock svg { width:13px; height:13px; }
+  .lock.ok { color:var(--mint); }
+  .lock.bad { color:#FF6B5B; }
 
-  main { flex:1 1 auto; overflow:auto; padding:14px 16px 8px; display:flex; flex-direction:column; gap:12px; }
+  main { flex:1 1 auto; overflow:auto; padding:14px 16px 10px; }
+  .wrap { max-width:1120px; margin:0 auto; display:grid; grid-template-columns:1fr; gap:12px; }
+  @media (min-width: 900px) {
+    .wrap { grid-template-columns:1fr 1fr; align-items:start; }
+    .wrap .span { grid-column:1 / -1; }
+  }
   .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px 14px; }
   .cap { display:flex; align-items:center; gap:10px; margin:0 0 10px; font-size:14px; color:var(--ink); }
   .num { width:26px; height:26px; border-radius:8px; background:var(--surface-2); color:var(--brand-ink); display:grid; place-items:center; font-size:13px; flex-shrink:0; }
@@ -44,7 +53,7 @@
 
   .row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
   .row:last-of-type { border-bottom:0; }
-  .row .k { width:150px; color:var(--ink-3); flex-shrink:0; }
+  .row .k { width:140px; color:var(--ink-3); flex-shrink:0; }
   .row .v { flex:1; min-width:0; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .row .v.wrap { white-space:normal; }
   .row input { flex:1; min-width:0; border:1px solid var(--line-strong); border-radius:10px; padding:9px 11px; font:inherit; font-weight:600; background:var(--surface); color:var(--ink); }
@@ -74,15 +83,8 @@
   .switch .txt { font-weight:600; }
   .switch .txt small { display:block; font-weight:400; color:var(--ink-3); font-size:12px; margin-top:1px; }
 
-  /* Безопасность */
-  .sec { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
-  .sec li { display:flex; gap:10px; align-items:flex-start; font-size:13px; color:var(--ink-2); }
-  .sec li::before { content:''; width:18px; height:18px; border-radius:50%; flex-shrink:0; margin-top:1px; background:var(--ok-soft) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M5 10.5l3 3 7-7' fill='none' stroke='%2315846E' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/14px no-repeat; }
-  .sec li.off::before { background:var(--bad-soft) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M6 6l8 8M14 6l-8 8' fill='none' stroke='%23B42318' stroke-width='2.2' stroke-linecap='round'/></svg>") center/14px no-repeat; }
-  .sec b { color:var(--ink); }
-  .sec code { font:12px ui-monospace, Consolas, monospace; color:var(--ink-2); }
-
   footer { display:flex; gap:8px; padding:10px 16px 14px; flex-shrink:0; border-top:1px solid var(--line); background:var(--bg); }
+  footer .in { max-width:1120px; margin:0 auto; width:100%; display:flex; gap:8px; }
   footer .sp { flex:1; }
   [hidden] { display:none !important; }
 </style>
@@ -105,70 +107,67 @@
     <div class="sub" id="hdr-sub">мост e-mehmon для Hosti Cloud</div>
   </div>
   <div class="st">
+    <span class="lock" id="sec-lock" title="">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="9" width="12" height="9" rx="2"/><path d="M7 9V6a3 3 0 0 1 6 0v3"/></svg>
+      <span id="sec-text">…</span>
+    </span>
     <span class="pill-big" id="hdr-pill">…</span>
-    <div class="meta" id="hdr-host"></div>
   </div>
 </header>
 
 <main>
-  <section class="card" id="card-pair">
-    <p class="cap"><span class="num">1</span>Подключение к Hosti Cloud <span class="pill" id="pair-pill">…</span></p>
-    <div id="pair-form">
-      <div class="row"><span class="k">Код подключения</span><input id="code" class="code" placeholder="••••••••••••" autocomplete="off" spellcheck="false" maxlength="16"></div>
-      <div class="acts"><button id="btn-pair">Подключить</button></div>
-      <div class="note">Код выдаёт администратор в кассе: Настройки → Мост e-mehmon → «Подключить мост». Код живёт 15 минут и сгорает после ввода. Мост получает доступ только к очереди своего филиала.</div>
-      <div class="note bad" id="pair-err" hidden></div>
-    </div>
-    <div id="pair-info" hidden>
-      <div class="row"><span class="k">Хостел</span><span class="v" id="p-tenant"></span></div>
-      <div class="row"><span class="k">Филиал</span><span class="v" id="p-branch"></span></div>
-      <div class="row"><span class="k">Подключён</span><span class="v" id="p-at"></span></div>
-      <div class="row"><span class="k">Связь</span><span class="v" id="p-session"></span></div>
-      <div class="acts"><button class="gh" id="btn-sweep">Проверить очередь сейчас</button><button class="bad" id="btn-unpair">Отключить</button></div>
-      <div class="note" id="p-note"></div>
-    </div>
-  </section>
+  <div class="wrap">
+    <section class="card" id="card-pair">
+      <p class="cap"><span class="num">1</span>Подключение к Hosti Cloud <span class="pill" id="pair-pill">…</span></p>
+      <div id="pair-form">
+        <div class="row"><span class="k">Код подключения</span><input id="code" class="code" placeholder="••••••••••••" autocomplete="off" spellcheck="false" maxlength="16"></div>
+        <div class="acts"><button id="btn-pair">Подключить</button></div>
+        <div class="note">Код выдаёт администратор в кассе: Настройки → Мост e-mehmon → «Подключить мост». Код живёт 15 минут и сгорает после ввода. Мост получает доступ только к очереди своего филиала.</div>
+        <div class="note bad" id="pair-err" hidden></div>
+      </div>
+      <div id="pair-info" hidden>
+        <div class="row"><span class="k">Хостел</span><span class="v" id="p-tenant"></span></div>
+        <div class="row"><span class="k">Филиал</span><span class="v" id="p-branch"></span></div>
+        <div class="row"><span class="k">Подключён</span><span class="v" id="p-at"></span></div>
+        <div class="row"><span class="k">Связь</span><span class="v" id="p-session"></span></div>
+        <div class="row"><span class="k">Компьютер</span><span class="v" id="p-host"></span></div>
+        <div class="acts"><button class="gh" id="btn-sweep">Проверить очередь сейчас</button><button class="bad" id="btn-unpair">Отключить</button></div>
+        <div class="note" id="p-note"></div>
+      </div>
+    </section>
 
-  <section class="card">
-    <p class="cap"><span class="num">2</span>Портал e-mehmon <span class="pill" id="portal-pill">…</span></p>
-    <div class="row"><span class="k">Логин портала</span><input id="login" placeholder="e-mail учётки филиала" autocomplete="off" spellcheck="false"></div>
-    <div class="row"><span class="k">Пароль</span><input id="password" type="password" placeholder="хранится только на этом компьютере" autocomplete="off"></div>
-    <div class="acts">
-      <button class="gh" id="btn-creds">Сохранить</button>
-      <button id="btn-login">Войти в e-mehmon…</button>
-      <button class="gh" id="btn-test">Проверить сессию</button>
-    </div>
-    <div class="note">Мост подставляет логин и пароль на странице входа, капчу и кнопку «Войти» нажимаете вы. Сессия портала живёт долго, входить нужно редко.</div>
-    <div class="note" id="portal-note" hidden></div>
-  </section>
+    <section class="card">
+      <p class="cap"><span class="num">2</span>Портал e-mehmon <span class="pill" id="portal-pill">…</span></p>
+      <div class="row"><span class="k">Логин портала</span><input id="login" placeholder="e-mail учётки филиала" autocomplete="off" spellcheck="false"></div>
+      <div class="row"><span class="k">Пароль</span><input id="password" type="password" placeholder="хранится только на этом компьютере" autocomplete="off"></div>
+      <div class="acts">
+        <button id="btn-login">Открыть портал e-mehmon</button>
+        <button class="gh" id="btn-test">Проверить сессию</button>
+        <button class="gh" id="btn-creds">Сохранить учётку</button>
+      </div>
+      <div class="note">Откроется окно портала: если сессия жива, вы увидите список гостей; если нет, страницу входа с подставленными логином и паролем. Капчу и «Войти» нажимаете вы. Сессия живёт долго, входить нужно редко.</div>
+      <div class="note" id="portal-note" hidden></div>
+    </section>
 
-  <section class="card">
-    <p class="cap"><span class="num">3</span>Работа <span class="pill" id="work-pill">…</span></p>
-    <div class="row"><span class="k">Очередь филиала</span><span class="v" id="w-queue">—</span></div>
-    <div class="row"><span class="k">Последняя задача</span><span class="v wrap" id="w-last">—</span></div>
-    <div class="row"><span class="k">Выполнено / отказов</span><span class="v" id="w-count">—</span></div>
-    <div class="row"><span class="k">Последняя проверка</span><span class="v" id="w-poll">—</span></div>
-    <div class="note bad" id="w-err" hidden></div>
-    <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span><span class="txt">Запускать вместе с Windows<small>Мост поднимается в трей при входе в систему, окно не мешает.</small></span></label>
-    <div class="acts" id="upd-row" hidden><button id="btn-update">Обновить и перезапустить</button><span class="note" id="upd-note" style="margin:0"></span></div>
-  </section>
-
-  <section class="card">
-    <p class="cap"><span class="num">🔒</span>Защита данных гостей <span class="pill ok" id="sec-pill">включена</span></p>
-    <ul class="sec" id="sec-list">
-      <li id="sec-tls"><span><b>Только защищённый канал.</b> Все адреса — HTTPS, TLS не ниже 1.2; при ошибке сертификата соединение обрывается, а не продолжается.</span></li>
-      <li id="sec-hosts"><span><b>Куда ходит мост:</b> <code id="sec-hosts-list">…</code>. Других адресов, кроме портала e-mehmon, нет.</span></li>
-      <li><span><b>Паспортные данные — только в памяти.</b> Задачи не пишутся на диск, номера паспортов вырезаются из журнала.</span></li>
-      <li id="sec-dpapi"><span><b>Пароль портала и ключ моста</b> хранятся под шифрованием Windows (DPAPI) этого пользователя.</span></li>
-      <li><span><b>Портал — в изолированной сессии</b> филиала: уход с emehmon.uz и запросы разрешений заблокированы.</span></li>
-    </ul>
-  </section>
+    <section class="card span">
+      <p class="cap"><span class="num">3</span>Работа <span class="pill" id="work-pill">…</span></p>
+      <div class="row"><span class="k">Очередь филиала</span><span class="v" id="w-queue">—</span></div>
+      <div class="row"><span class="k">Последняя задача</span><span class="v wrap" id="w-last">—</span></div>
+      <div class="row"><span class="k">Выполнено / отказов</span><span class="v" id="w-count">—</span></div>
+      <div class="row"><span class="k">Последняя проверка</span><span class="v" id="w-poll">—</span></div>
+      <div class="note bad" id="w-err" hidden></div>
+      <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span><span class="txt">Запускать вместе с Windows<small>Мост поднимается в трей при входе в систему, окно не мешает.</small></span></label>
+      <div class="acts" id="upd-row" hidden><button id="btn-update">Обновить и перезапустить</button><span class="note" id="upd-note" style="margin:0"></span></div>
+    </section>
+  </div>
 </main>
 
 <footer>
-  <button class="gh" id="btn-logs">Журнал</button>
-  <span class="sp"></span>
-  <button class="gh" id="btn-quit">Выйти из моста</button>
+  <div class="in">
+    <button class="gh" id="btn-logs">Журнал</button>
+    <span class="sp"></span>
+    <button class="gh" id="btn-quit">Выйти из моста</button>
+  </div>
 </footer>
 
 <script src="app.js"></script>

@@ -304,7 +304,14 @@ class Portal {
   }
 
   /** Показать окно входа кассиру с подставленными логином и паролем. */
-  async openLogin() {
+  /**
+   * Показать портал кассиру. Без входа — страница входа с подставленной
+   * учёткой. Если сессия жива: напоминание из очереди окно прячет (показывать
+   * нечего), а нажатие кнопки в окне моста (`keepOpen`) оставляет портал
+   * открытым — раньше кнопка при живой сессии «ничего не делала».
+   * @returns {{ loggedIn: boolean }}
+   */
+  async openLogin({ keepOpen = false } = {}) {
     this._loginMode = true;
     this.lastLoginShownAt = Date.now();
     const w = this.win();
@@ -312,11 +319,12 @@ class Portal {
     w.show(); w.focus();
     try { this.onLoginShown(); } catch { /* слушатель */ }
     if (!this.atLogin()) {
-      // Уже вошли — прятать нечего, но и держать окно незачем.
       this._loginMode = false;
-      w.hide();
+      if (!keepOpen) w.hide();
       try { this.onLoginOk(); } catch { /* слушатель */ }
+      return { loggedIn: true };
     }
+    return { loggedIn: false };
   }
 
   /** Напомнить о входе не чаще раза в LOGIN_WAIT_MS. */

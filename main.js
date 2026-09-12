@@ -145,7 +145,7 @@ function statusLine(s) {
 function iconImage(kind = 'icon') {
   // Знак Hosti (assets/hosti-mark.svg → scripts/build-icon.js): icon.png для окна и
   // уведомлений, tray.png 32×32 для трея.
-  const p = path.join(__dirname, 'assets', kind === 'tray' ? 'tray.png' : 'icon.png');
+  const p = path.join(__dirname, 'assets', kind === 'tray' ? 'tray.png' : kind === 'png' ? 'icon.png' : 'icon.ico');
   const img = nativeImage.createFromPath(p);
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
@@ -203,7 +203,7 @@ function updateTray(s) {
     { label: statusLine(s), enabled: false },
     { type: 'separator' },
     { label: 'Открыть', click: () => openWindow() },
-    { label: 'Войти в e-mehmon…', click: () => openPortalLogin(), enabled: !!portal || !!s.paired },
+    { label: 'Открыть портал e-mehmon', click: () => openPortalLogin({ keepOpen: true }).catch(() => {}), enabled: !!portal || !!s.paired },
     { label: 'Проверить очередь сейчас', click: () => worker && worker.tick().catch(() => {}), enabled: !!worker },
     { type: 'separator' },
     ...(updateReady ? [{ label: `Обновить до ${updateReady} и перезапустить`, click: () => installUpdate('меню') }] : []),
@@ -214,12 +214,22 @@ function updateTray(s) {
 
 function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
+  // Системной рамки нет: шапка окна — своя, в цветах бренда; системные
+  // кнопки свернуть/развернуть/закрыть рисует Windows поверх неё
+  // (titleBarOverlay). Размер и место окна помнятся между запусками.
+  const saved = (store && store.get('winBounds')) || null;
   win = new BrowserWindow({
-    width: 600, height: 780, minWidth: 520, minHeight: 600,
+    width: (saved && saved.width) || 720, height: (saved && saved.height) || 820,
+    x: saved && Number.isFinite(saved.x) ? saved.x : undefined,
+    y: saved && Number.isFinite(saved.y) ? saved.y : undefined,
+    minWidth: 560, minHeight: 620,
     title: 'Hosti Bridge',
     icon: iconImage(),
+    show: false,
     backgroundColor: '#F5F7F2',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#000000', symbolColor: '#F5F7F2', height: 64 },
     webPreferences: {
       preload: path.join(__dirname, 'ui', 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
@@ -227,13 +237,28 @@ function openWindow() {
   });
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  win.once('ready-to-show', () => { if (saved && saved.maximized) win.maximize(); win.show(); });
+  let boundsTimer = null;
+  const rememberBounds = () => {
+    clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      if (!win || win.isDestroyed() || !store) return;
+      const maximized = win.isMaximized();
+      const b = maximized ? (store.get('winBounds') || {}) : win.getBounds();
+      store.set('winBounds', { ...b, maximized });
+    }, 400);
+  };
+  win.on('resize', rememberBounds);
+  win.on('move', rememberBounds);
+  win.on('maximize', rememberBounds);
+  win.on('unmaximize', rememberBounds);
   win.on('close', (e) => { if (!quitting) { e.preventDefault(); win.hide(); } });
   win.on('closed', () => { win = null; });
   win.webContents.on('did-finish-load', () => broadcast());
 }
 
 function notify(title, body) {
-  try { if (Notification.isSupported()) new Notification({ title, body, icon: iconImage() }).show(); } catch { /* без уведомлений */ }
+  try { if (Notification.isSupported()) new Notification({ title, body, icon: iconImage('png') }).show(); } catch { /* без уведомлений */ }
 }
 
 // ── Сборка ────────────────────────────────────────────────────────────────
@@ -274,10 +299,11 @@ function ensurePortal(branchId) {
   return portal;
 }
 
-async function openPortalLogin() {
+async function openPortalLogin(opts = {}) {
   const branchId = (sessionB && sessionB.pairing && sessionB.pairing.branchId) || 'default';
-  await ensurePortal(branchId).openLogin();
+  const r = await ensurePortal(branchId).openLogin(opts);
   broadcast();
+  return r || { loggedIn: false };
 }
 
 async function startWorker() {
@@ -412,7 +438,15 @@ ipcMain.handle('set-creds', async (_e, { login, password } = {}) => {
   return { ok: true };
 });
 
-ipcMain.handle('open-portal', async () => { await openPortalLogin(); return { ok: true }; });
+ipcMain.handle('open-portal', async () => {
+  // Кнопка в окне: портал остаётся открытым и при живой сессии — кассир видит список гостей.
+  try {
+    const r = await openPortalLogin({ keepOpen: true });
+    return { ok: true, loggedIn: !!(r && r.loggedIn) };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  }
+});
 
 ipcMain.handle('test-portal', async () => {
   try {
