@@ -62,7 +62,31 @@ const TIMING = Object.freeze({
   RETRY_AFTER_ERROR_MS: 15 * 1000,
 });
 
+/**
+ * Проверка адресов профиля: паспортные данные гостей не ходят открытым
+ * текстом. В боевом профиле любой адрес не по https — отказ запускаться;
+ * http допустим только для эмуляторов на этой же машине (профиль demo).
+ * Возвращает факты для окна «Защита данных»: только ли https, какие хосты.
+ */
+const BASES = ['functionsBase', 'identityBase', 'tokenBase', 'firestoreBase', 'storageBase'];
+const isLoopback = (u) => /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(String(u || ''));
+function assertSecure(profile) {
+  const insecure = BASES.filter((k) => !/^https:\/\//.test(String(profile[k] || '')));
+  if (profile.name === 'prod' && insecure.length) {
+    throw new Error(`небезопасные адреса в боевом профиле: ${insecure.join(', ')}`);
+  }
+  const foreign = insecure.filter((k) => !isLoopback(profile[k]));
+  if (foreign.length) {
+    throw new Error(`http допустим только для эмуляторов на этой машине: ${foreign.join(', ')}`);
+  }
+  const hosts = [];
+  for (const k of BASES) {
+    try { const h = new URL(profile[k]).host; if (h && !hosts.includes(h)) hosts.push(h); } catch { /* пропуск */ }
+  }
+  return { httpsOnly: insecure.length === 0, hosts };
+}
+
 /** Конечные статусы задачи — как в client.js кассы. */
 const TERMINAL = Object.freeze(['done', 'failed', 'cancelled', 'expired']);
 
-module.exports = { PROD, DEMO, profileFor, TIMING, TERMINAL, VERSION: version };
+module.exports = { PROD, DEMO, profileFor, assertSecure, TIMING, TERMINAL, VERSION: version };

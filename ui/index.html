@@ -2,62 +2,119 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
-<title>Hostella Bridge</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:">
+<title>Hosti Bridge</title>
 <style>
-  :root { --bg:#f4f6f5; --surface:#ffffff; --ink:#0f1f19; --ink-2:#3a4a44; --ink-3:#6b7a74; --line:#dfe6e2; --brand:#0f9688; --brand-ink:#0b6f65;
-          --ok:#0f9688; --warn:#b7791f; --bad:#c0392b; --isle:#04150e; --isle-ink:#e6f2ee; --isle-mute:rgba(230,242,238,.7); }
+  /* Палитра брендбука Hosti (как в кассе): Chalk / Bone / Sage / Juniper / Verdant, знак Mint, точка Amber. */
+  @font-face { font-family: 'HostiDisplay'; src: url('fonts/hosti-display-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+  :root {
+    --bg:#F5F7F2; --surface:#FFFFFF; --surface-2:#EEF1EA; --line:#DFE5DC; --line-strong:#C3CDBD;
+    --ink:#14382C; --ink-2:#57605A; --ink-3:#666F69;
+    --brand:#15846E; --brand-ink:#195D4B; --brand-soft:#EBF7F2; --mint:#1FC08F; --amber:#FFB829;
+    --ok:#15846E; --ok-soft:#EBF7F2; --warn:#8A5A00; --warn-soft:#FFF4D6; --bad:#B42318; --bad-soft:#FDECEA;
+    --isle:#000000; --isle-ink:#F5F7F2; --isle-mute:rgba(245,247,242,.68);
+    --radius:14px;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
-  header { background:var(--isle); color:var(--isle-ink); padding:18px 22px 16px; display:flex; align-items:center; gap:14px; }
-  header .ic { width:42px; height:42px; border-radius:12px; background:rgba(230,242,238,.12); display:grid; place-items:center; font-size:20px; }
-  header h1 { font-size:17px; margin:0; font-weight:800; letter-spacing:-.01em; }
-  header .sub { font-size:12px; color:var(--isle-mute); margin-top:2px; }
-  header .st { margin-left:auto; text-align:right; font-size:12px; color:var(--isle-mute); }
-  header .st b { display:block; font-size:13px; color:var(--isle-ink); font-weight:800; }
-  main { padding:14px 16px 18px; display:flex; flex-direction:column; gap:12px; }
-  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
-  .cap { font-size:10.5px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); margin:0 0 10px; display:flex; align-items:center; gap:8px; }
-  .cap .pill { margin-left:auto; text-transform:none; letter-spacing:0; font-size:11px; padding:2px 8px; border-radius:999px; background:#eef3f1; color:var(--ink-2); font-weight:700; }
-  .pill.ok { background:rgba(15,150,136,.12); color:var(--brand-ink); }
-  .pill.warn { background:rgba(183,121,31,.14); color:var(--warn); }
-  .pill.bad { background:rgba(192,57,43,.12); color:var(--bad); }
-  .row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
-  .row:last-child { border-bottom:0; }
-  .row .k { width:150px; color:var(--ink-3); font-weight:600; flex-shrink:0; }
-  .row .v { flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .row input { flex:1; min-width:0; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font:inherit; font-weight:700; background:#fbfcfb; color:var(--ink); }
-  .row input:focus { outline:2px solid rgba(15,150,136,.35); border-color:var(--brand); }
-  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  button { border:0; border-radius:10px; height:38px; padding:0 14px; font:800 13px system-ui, sans-serif; cursor:pointer; color:#fff; background:var(--brand); display:inline-flex; align-items:center; gap:6px; }
-  button.gh { background:var(--surface); color:var(--ink-2); border:1px solid var(--line); }
-  button.bad { background:var(--bad); }
-  button:disabled { opacity:.55; cursor:default; }
-  .note { font-size:12px; color:var(--ink-3); margin-top:8px; line-height:1.4; }
+  html, body { height:100%; }
+  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  h1, h2, .cap, .num, .pill-big { font-family:'HostiDisplay', system-ui, sans-serif; font-weight:600; }
+
+  /* Шапка — Void, как аватарка бренда */
+  header { background:var(--isle); color:var(--isle-ink); padding:16px 20px 14px; display:flex; align-items:center; gap:14px; flex-shrink:0; }
+  header .mark { width:44px; height:44px; flex-shrink:0; }
+  header h1 { font-size:19px; margin:0; letter-spacing:-.01em; line-height:1.1; }
+  header .sub { font-size:12px; color:var(--isle-mute); margin-top:3px; }
+  header .st { margin-left:auto; text-align:right; }
+  .pill-big { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; font-size:13px; background:rgba(245,247,242,.10); color:var(--isle-ink); white-space:nowrap; }
+  .pill-big::before { content:''; width:9px; height:9px; border-radius:50%; background:var(--isle-mute); flex-shrink:0; }
+  .pill-big.ok::before { background:var(--mint); box-shadow:0 0 0 4px rgba(31,192,143,.18); }
+  .pill-big.warn::before { background:var(--amber); }
+  .pill-big.bad::before { background:#FF6B5B; }
+  header .meta { font-size:11px; color:var(--isle-mute); margin-top:6px; }
+
+  main { flex:1 1 auto; overflow:auto; padding:14px 16px 8px; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px 14px; }
+  .cap { display:flex; align-items:center; gap:10px; margin:0 0 10px; font-size:14px; color:var(--ink); }
+  .num { width:26px; height:26px; border-radius:8px; background:var(--surface-2); color:var(--brand-ink); display:grid; place-items:center; font-size:13px; flex-shrink:0; }
+  .cap .pill { margin-left:auto; font-family:system-ui, sans-serif; font-weight:700; font-size:11.5px; padding:3px 9px; border-radius:999px; background:var(--surface-2); color:var(--ink-2); white-space:nowrap; }
+  .pill.ok { background:var(--ok-soft); color:var(--ok); }
+  .pill.warn { background:var(--warn-soft); color:var(--warn); }
+  .pill.bad { background:var(--bad-soft); color:var(--bad); }
+
+  .row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
+  .row:last-of-type { border-bottom:0; }
+  .row .k { width:150px; color:var(--ink-3); flex-shrink:0; }
+  .row .v { flex:1; min-width:0; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .v.wrap { white-space:normal; }
+  .row input { flex:1; min-width:0; border:1px solid var(--line-strong); border-radius:10px; padding:9px 11px; font:inherit; font-weight:600; background:var(--surface); color:var(--ink); }
+  .row input:focus { outline:2px solid rgba(21,132,110,.35); border-color:var(--brand); }
+  input.code { font:600 20px/1.2 ui-monospace, Consolas, monospace; letter-spacing:.14em; text-transform:uppercase; text-align:center; }
+
+  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button { border:1px solid transparent; border-radius:10px; height:38px; padding:0 14px; font:700 13px system-ui, sans-serif; cursor:pointer; color:#fff; background:var(--brand); display:inline-flex; align-items:center; gap:6px; }
+  button:hover { background:var(--brand-ink); }
+  button.gh { background:var(--surface); color:var(--ink-2); border-color:var(--line-strong); }
+  button.gh:hover { background:var(--surface-2); color:var(--ink); }
+  button.bad { background:var(--surface); color:var(--bad); border-color:var(--line-strong); }
+  button.bad:hover { background:var(--bad-soft); }
+  button:disabled { opacity:.5; cursor:default; }
+  .note { font-size:12px; color:var(--ink-3); margin-top:9px; line-height:1.45; }
   .note.bad { color:var(--bad); font-weight:600; }
   .note.ok { color:var(--brand-ink); font-weight:600; }
-  code.c { font:700 14px ui-monospace, Consolas, monospace; letter-spacing:.06em; }
-  label.chk { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; cursor:pointer; }
-  footer { display:flex; gap:8px; padding:0 16px 16px; }
+
+  /* Переключатель */
+  .switch { display:flex; align-items:center; gap:12px; cursor:pointer; padding:10px 0 2px; }
+  .switch input { position:absolute; opacity:0; width:0; height:0; }
+  .switch .track { width:40px; height:22px; border-radius:999px; background:var(--line-strong); position:relative; transition:background .15s; flex-shrink:0; }
+  .switch .track::after { content:''; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .switch input:checked + .track { background:var(--brand); }
+  .switch input:checked + .track::after { left:21px; }
+  .switch input:focus-visible + .track { outline:2px solid rgba(21,132,110,.35); outline-offset:2px; }
+  .switch .txt { font-weight:600; }
+  .switch .txt small { display:block; font-weight:400; color:var(--ink-3); font-size:12px; margin-top:1px; }
+
+  /* Безопасность */
+  .sec { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .sec li { display:flex; gap:10px; align-items:flex-start; font-size:13px; color:var(--ink-2); }
+  .sec li::before { content:''; width:18px; height:18px; border-radius:50%; flex-shrink:0; margin-top:1px; background:var(--ok-soft) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M5 10.5l3 3 7-7' fill='none' stroke='%2315846E' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/14px no-repeat; }
+  .sec li.off::before { background:var(--bad-soft) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M6 6l8 8M14 6l-8 8' fill='none' stroke='%23B42318' stroke-width='2.2' stroke-linecap='round'/></svg>") center/14px no-repeat; }
+  .sec b { color:var(--ink); }
+  .sec code { font:12px ui-monospace, Consolas, monospace; color:var(--ink-2); }
+
+  footer { display:flex; gap:8px; padding:10px 16px 14px; flex-shrink:0; border-top:1px solid var(--line); background:var(--bg); }
   footer .sp { flex:1; }
   [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <header>
-  <div class="ic">⛁</div>
+  <svg class="mark" viewBox="0 0 512 512" role="img" aria-label="Hosti">
+    <rect width="512" height="512" rx="112" fill="#000000"/>
+    <g fill="none" stroke="#1FC08F" stroke-width="24" stroke-linecap="round">
+      <circle cx="256" cy="256" r="134"/>
+      <line x1="206.5" y1="187" x2="206.5" y2="325"/>
+      <line x1="305.5" y1="187" x2="305.5" y2="325"/>
+      <line x1="206.5" y1="244" x2="305.5" y2="244"/>
+      <line x1="206.5" y1="286" x2="305.5" y2="286"/>
+    </g>
+    <circle cx="236.2" cy="218.8" r="13.2" fill="#FFB829"/>
+  </svg>
   <div>
-    <h1>Hostella Bridge</h1>
+    <h1>Hosti Bridge</h1>
     <div class="sub" id="hdr-sub">мост e-mehmon для Hosti Cloud</div>
   </div>
-  <div class="st"><b id="hdr-status">…</b><span id="hdr-host"></span></div>
+  <div class="st">
+    <span class="pill-big" id="hdr-pill">…</span>
+    <div class="meta" id="hdr-host"></div>
+  </div>
 </header>
 
 <main>
   <section class="card" id="card-pair">
-    <p class="cap">Подключение к Hosti Cloud <span class="pill" id="pair-pill">…</span></p>
+    <p class="cap"><span class="num">1</span>Подключение к Hosti Cloud <span class="pill" id="pair-pill">…</span></p>
     <div id="pair-form">
-      <div class="row"><span class="k">Код подключения</span><input id="code" placeholder="12 знаков из кассы" autocomplete="off" spellcheck="false" maxlength="16"></div>
+      <div class="row"><span class="k">Код подключения</span><input id="code" class="code" placeholder="••••••••••••" autocomplete="off" spellcheck="false" maxlength="16"></div>
       <div class="acts"><button id="btn-pair">Подключить</button></div>
       <div class="note">Код выдаёт администратор в кассе: Настройки → Мост e-mehmon → «Подключить мост». Код живёт 15 минут и сгорает после ввода. Мост получает доступ только к очереди своего филиала.</div>
       <div class="note bad" id="pair-err" hidden></div>
@@ -67,13 +124,13 @@
       <div class="row"><span class="k">Филиал</span><span class="v" id="p-branch"></span></div>
       <div class="row"><span class="k">Подключён</span><span class="v" id="p-at"></span></div>
       <div class="row"><span class="k">Связь</span><span class="v" id="p-session"></span></div>
-      <div class="acts"><button class="gh" id="btn-sweep">Проверить очередь сейчас</button><button class="gh bad-ink" id="btn-unpair">Отключить</button></div>
+      <div class="acts"><button class="gh" id="btn-sweep">Проверить очередь сейчас</button><button class="bad" id="btn-unpair">Отключить</button></div>
       <div class="note" id="p-note"></div>
     </div>
   </section>
 
   <section class="card">
-    <p class="cap">Портал e-mehmon <span class="pill" id="portal-pill">…</span></p>
+    <p class="cap"><span class="num">2</span>Портал e-mehmon <span class="pill" id="portal-pill">…</span></p>
     <div class="row"><span class="k">Логин портала</span><input id="login" placeholder="e-mail учётки филиала" autocomplete="off" spellcheck="false"></div>
     <div class="row"><span class="k">Пароль</span><input id="password" type="password" placeholder="хранится только на этом компьютере" autocomplete="off"></div>
     <div class="acts">
@@ -81,19 +138,30 @@
       <button id="btn-login">Войти в e-mehmon…</button>
       <button class="gh" id="btn-test">Проверить сессию</button>
     </div>
-    <div class="note">Пароль шифруется средствами Windows и никуда не передаётся. Мост подставляет логин и пароль на странице входа, капчу и кнопку «Войти» нажимаете вы. Сессия портала живёт долго, входить нужно редко.</div>
+    <div class="note">Мост подставляет логин и пароль на странице входа, капчу и кнопку «Войти» нажимаете вы. Сессия портала живёт долго, входить нужно редко.</div>
     <div class="note" id="portal-note" hidden></div>
   </section>
 
   <section class="card">
-    <p class="cap">Работа <span class="pill" id="work-pill">…</span></p>
+    <p class="cap"><span class="num">3</span>Работа <span class="pill" id="work-pill">…</span></p>
     <div class="row"><span class="k">Очередь филиала</span><span class="v" id="w-queue">—</span></div>
-    <div class="row"><span class="k">Последняя задача</span><span class="v" id="w-last">—</span></div>
+    <div class="row"><span class="k">Последняя задача</span><span class="v wrap" id="w-last">—</span></div>
     <div class="row"><span class="k">Выполнено / отказов</span><span class="v" id="w-count">—</span></div>
     <div class="row"><span class="k">Последняя проверка</span><span class="v" id="w-poll">—</span></div>
     <div class="note bad" id="w-err" hidden></div>
-    <div class="acts" style="margin-top:12px"><label class="chk"><input type="checkbox" id="autostart"> Запускать вместе с Windows</label></div>
+    <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span><span class="txt">Запускать вместе с Windows<small>Мост поднимается в трей при входе в систему, окно не мешает.</small></span></label>
     <div class="acts" id="upd-row" hidden><button id="btn-update">Обновить и перезапустить</button><span class="note" id="upd-note" style="margin:0"></span></div>
+  </section>
+
+  <section class="card">
+    <p class="cap"><span class="num">🔒</span>Защита данных гостей <span class="pill ok" id="sec-pill">включена</span></p>
+    <ul class="sec" id="sec-list">
+      <li id="sec-tls"><span><b>Только защищённый канал.</b> Все адреса — HTTPS, TLS не ниже 1.2; при ошибке сертификата соединение обрывается, а не продолжается.</span></li>
+      <li id="sec-hosts"><span><b>Куда ходит мост:</b> <code id="sec-hosts-list">…</code>. Других адресов, кроме портала e-mehmon, нет.</span></li>
+      <li><span><b>Паспортные данные — только в памяти.</b> Задачи не пишутся на диск, номера паспортов вырезаются из журнала.</span></li>
+      <li id="sec-dpapi"><span><b>Пароль портала и ключ моста</b> хранятся под шифрованием Windows (DPAPI) этого пользователя.</span></li>
+      <li><span><b>Портал — в изолированной сессии</b> филиала: уход с emehmon.uz и запросы разрешений заблокированы.</span></li>
+    </ul>
   </section>
 </main>
 

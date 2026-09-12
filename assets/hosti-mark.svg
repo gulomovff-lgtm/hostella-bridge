@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hosti">
+  <!-- Собран scripts/build-brand-icons.mjs по «Брендбук исходники/logo3.py»
+       (avatar_dark). Не править вручную: числа обязаны совпадать
+       с src/components/UI/Logo.jsx, это проверяет tests/brand.test.mjs. -->
+  <rect width="512" height="512" rx="112" fill="#000000"/>
+  <g fill="none" stroke="#1FC08F" stroke-width="24" stroke-linecap="round">
+    <circle cx="256" cy="256" r="134"/>
+    <line x1="206.5" y1="187" x2="206.5" y2="325"/>
+    <line x1="305.5" y1="187" x2="305.5" y2="325"/>
+    <line x1="206.5" y1="244" x2="305.5" y2="244"/>
+    <line x1="206.5" y1="286" x2="305.5" y2="286"/>
+  </g>
+  <circle cx="236.2" cy="218.8" r="13.2" fill="#FFB829"/>
+</svg>

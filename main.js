@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Hostella Bridge — мост e-mehmon для Hosti Cloud.
+ * Hosti Bridge — мост e-mehmon для Hosti Cloud.
  *
  * Программа в трее на компьютере филиала. Касса ставит задачу госрегистрации
  * в Firestore, мост забирает её, выполняет в скрытом окне портала боевыми
@@ -13,12 +13,15 @@
  */
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, safeStorage, shell, Notification } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 const os = require('node:os');
+const tls = require('node:tls');
 const crypto = require('node:crypto');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
-const { profileFor, TIMING, VERSION } = require('./src/config');
+const { profileFor, assertSecure, TIMING, VERSION } = require('./src/config');
+const { logHook } = require('./src/redact');
 const { Store, safeStorageCodec } = require('./src/store');
 const { Session } = require('./src/auth');
 const { Firestore, isTransient } = require('./src/firebaseRest');
@@ -29,9 +32,46 @@ const { sheetFileName } = require('./electron/emehmonSheet');
 
 log.transports.file.level = 'info';
 log.transports.file.maxSize = 5 * 1024 * 1024;
+// Номера паспортов в журнал не попадают (src/redact.js).
+log.hooks.push(logHook);
 
 const profile = profileFor(process.argv, process.env);
 const host = os.hostname();
+
+// Папка настроек прежнего имени («Hostella Bridge») остаётся рабочей: ключ,
+// которым safeStorage шифрует пароль и токен, живёт в её Local State, и
+// перенос файлов в новую папку его не переживает — мост «забыл бы» и
+// подключение, и пароль портала. Поэтому, если прежняя папка есть, живём в ней.
+{
+  const legacy = path.join(path.dirname(app.getPath('userData')), 'Hostella Bridge');
+  if (fs.existsSync(path.join(legacy, `bridge-${profile.name}.json`))) app.setPath('userData', legacy);
+}
+
+// ── Защита передачи данных ────────────────────────────────────────────────
+// Паспортные данные гостей ходят между кассой, мостом и порталом. Поэтому:
+//   • адреса только https (боевой профиль иначе не стартует), TLS ≥ 1.2 и в
+//     Node (Firestore/функции), и в Chromium (портал);
+//   • ошибка сертификата — обрыв, а не «продолжить»;
+//   • задачи живут в памяти, на диск не пишутся; журнал — без номеров паспортов;
+//   • пароль портала и ключ моста — под DPAPI (src/store.js).
+let security = { httpsOnly: true, hosts: [] };
+try {
+  security = assertSecure(profile);
+} catch (e) {
+  log.error('[security]', e.message);
+  app.whenReady().then(() => {
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Hosti Bridge', `Мост не запущен: ${e.message}`);
+    app.exit(1);
+  });
+}
+tls.DEFAULT_MIN_VERSION = 'TLSv1.2';
+app.commandLine.appendSwitch('ssl-version-min', 'tls1.2');
+app.on('certificate-error', (event, _wc, url, error, _cert, callback) => {
+  event.preventDefault();
+  callback(false);
+  log.warn('[security] сертификат отклонён:', url, error);
+});
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -69,9 +109,15 @@ function snapshot() {
       hasPassword: !!(store && store.hasSecret('portalPassword')),
       login: (store && store.get('portalLogin')) || '',
     },
-    autostart: app.isPackaged ? !!app.getLoginItemSettings().openAtLogin : false,
+    autostart: autostartOn(),
     updateReady,
     logFile: safeLogPath(),
+    security: {
+      tlsMin: 'TLS 1.2',
+      httpsOnly: security.httpsOnly,
+      hosts: [...security.hosts, 'emehmon.uz'],
+      secretsEncrypted: (() => { try { return safeStorage.isEncryptionAvailable(); } catch { return false; } })(),
+    },
   };
 }
 
@@ -96,14 +142,54 @@ function statusLine(s) {
 
 // ── Трей и окно ───────────────────────────────────────────────────────────
 
-function iconImage() {
-  const p = path.join(__dirname, 'assets', 'icon.ico');
+function iconImage(kind = 'icon') {
+  // Знак Hosti (assets/hosti-mark.svg → scripts/build-icon.js): icon.png для окна и
+  // уведомлений, tray.png 32×32 для трея.
+  const p = path.join(__dirname, 'assets', kind === 'tray' ? 'tray.png' : 'icon.png');
   const img = nativeImage.createFromPath(p);
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
 
+// ── Автозапуск ────────────────────────────────────────────────────────────
+// Запись в автозагрузке хранит и путь к exe, и аргумент `--hidden`; читать
+// её нужно с теми же аргументами — иначе Windows отвечает «нет записи», и
+// галочка в окне выглядела выключенной, хотя автозапуск стоял.
+const AUTOSTART_ARGS = ['--hidden'];
+function autostartOn() {
+  if (!app.isPackaged) return false;
+  try { return !!app.getLoginItemSettings({ path: process.execPath, args: AUTOSTART_ARGS }).openAtLogin; } catch { return false; }
+}
+function setAutostart(on) {
+  if (!app.isPackaged) return false;
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!on, path: process.execPath, args: AUTOSTART_ARGS });
+    if (store) store.set('autostart', !!on);
+    return autostartOn() === !!on;
+  } catch (e) {
+    log.warn('[bridge] автозапуск не переключился:', e.message);
+    return false;
+  }
+}
+function ensureAutostart() {
+  if (!app.isPackaged) return;
+  // Запись прежнего имени («Hostella Bridge») после переименования указывает в никуда — снять.
+  if (!store.get('autostartRenamed')) {
+    for (const args of [AUTOSTART_ARGS, undefined]) {
+      try { app.setLoginItemSettings({ openAtLogin: false, name: 'Hostella Bridge', args }); } catch { /* записи могло не быть */ }
+    }
+    store.set('autostartRenamed', true);
+  }
+  // Первый запуск — включить: мост поднимается вместе с компьютером стойки.
+  // Дальше — по выбору в окне, но путь к exe прописывается заново: после
+  // обновления или переименования он мог смениться.
+  const want = store.get('autostart');
+  if (want === undefined) setAutostart(true);
+  else if (want) setAutostart(true);
+}
+
+
 function createTray() {
-  tray = new Tray(iconImage());
+  tray = new Tray(iconImage('tray'));
   tray.on('double-click', () => openWindow());
   tray.on('click', () => openWindow());
   updateTray(snapshot());
@@ -111,9 +197,9 @@ function createTray() {
 
 function updateTray(s) {
   if (!tray) return;
-  tray.setToolTip(`Hostella Bridge ${VERSION} — ${statusLine(s)}`);
+  tray.setToolTip(`Hosti Bridge ${VERSION} — ${statusLine(s)}`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: `Hostella Bridge ${VERSION}${profile.name === 'demo' ? ' · demo' : ''}`, enabled: false },
+    { label: `Hosti Bridge ${VERSION}${profile.name === 'demo' ? ' · demo' : ''}`, enabled: false },
     { label: statusLine(s), enabled: false },
     { type: 'separator' },
     { label: 'Открыть', click: () => openWindow() },
@@ -129,9 +215,10 @@ function updateTray(s) {
 function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   win = new BrowserWindow({
-    width: 560, height: 720, minWidth: 480, minHeight: 560,
-    title: 'Hostella Bridge',
+    width: 600, height: 780, minWidth: 520, minHeight: 600,
+    title: 'Hosti Bridge',
     icon: iconImage(),
+    backgroundColor: '#F5F7F2',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'ui', 'preload.js'),
@@ -204,7 +291,7 @@ async function startWorker() {
   if (!check.ok) {
     log.warn('[bridge] сессия:', check.reason, check.message);
     if (check.reason === 'revoked') {
-      notify('Hostella Bridge', 'Мост отключён администратором. Подключите его заново кодом.');
+      notify('Hosti Bridge', 'Мост отключён администратором. Подключите его заново кодом.');
       openWindow();
     } else {
       clearTimeout(retryTimer);
@@ -223,7 +310,7 @@ async function startWorker() {
     run: (type, payload, job) => p.run(type, payload, job),
     isLoggedIn: () => p.isLoggedIn(),
     onNeedLogin: async () => {
-      notify('Hostella Bridge', 'Войдите в e-mehmon — очередь регистрации ждёт входа.');
+      notify('Hosti Bridge', 'Войдите в e-mehmon — очередь регистрации ждёт входа.');
       if (p.shouldRemindLogin() || !p._win || !p._win.isVisible()) await p.openLogin();
     },
   };
@@ -348,10 +435,9 @@ ipcMain.handle('sweep-now', async () => {
 ipcMain.handle('install-update', async () => { installUpdate('окно'); return { ok: !!updateReady }; });
 
 ipcMain.handle('set-autostart', async (_e, on) => {
-  // `--hidden`: при входе в Windows мост поднимается в трей, окно не мешает.
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: process.execPath, args: ['--hidden'] });
+  const ok = setAutostart(on);
   broadcast();
-  return { ok: true };
+  return { ok, autostart: autostartOn() };
 });
 
 ipcMain.handle('open-logs', async () => { const f = safeLogPath(); if (f) shell.showItemInFolder(f); return { ok: true }; });
@@ -360,15 +446,13 @@ ipcMain.handle('quit', async () => { quitting = true; app.quit(); });
 // ── Жизненный цикл ────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!security.hosts.length && profile.name === 'prod') return; // адреса не прошли проверку — окно ошибки уже показано
+  // Страницам разрешения (камера, геолокация, уведомления) не выдаются нигде.
+  try { const { session } = require('electron'); session.defaultSession.setPermissionRequestHandler((_wc, _p, cb) => cb(false)); } catch { /* ignore */ }
   store = new Store({ file: path.join(app.getPath('userData'), `bridge-${profile.name}.json`), codec: safeStorageCodec(safeStorage) });
   sessionB = new Session({ profile, store, host, version: VERSION, log });
   createTray();
-  // Первый запуск после установки — включаем автозапуск: мост должен
-  // подниматься вместе с компьютером стойки, а не когда о нём вспомнят.
-  if (app.isPackaged && !store.get('autostartSet')) {
-    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: ['--hidden'] });
-    store.set('autostartSet', true);
-  }
+  ensureAutostart();
   setupUpdates();
   // `--pair=КОД` — подключение без окна (установка администратором по
   // удалёнке, прогон на стенде). Делает ровно то же, что кнопка в окне.

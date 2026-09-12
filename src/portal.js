@@ -67,7 +67,13 @@ class Portal {
     if (lightPartitions.has(part)) return;
     lightPartitions.add(part);
     try {
-      session.fromPartition(part).webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
+      const ses = session.fromPartition(part);
+      // Паспортные данные ходят только по TLS: любой запрос по http из сессии
+      // портала обрывается (кроме эмуляторов на этой машине). Разрешения
+      // (камера, геолокация, уведомления) странице портала не нужны.
+      ses.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+      ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
+        if (/^http:\/\//i.test(details.url) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(details.url)) return cb({ cancel: true });
         const t = details.resourceType;
         // Пока снимается лист убытия, картинки и шрифты нужны: они попадут в PDF.
         const cancel = !sheet.isCapturing() && (t === 'font' || t === 'media' || (t === 'image' && !/captcha/i.test(details.url || '')));
@@ -243,7 +249,7 @@ class Portal {
       try {
         const up = await this.uploadSheet({ guestId: (job && job.guestId) || p.guestId || '', passport: p.passport || '', pdf: got.pdf });
         out.sheet = { path: up.path, bytes: got.bytes, at: new Date().toISOString(), source: got.source };
-        this.log.info(`[portal] лист убытия: ${up.path} (${got.bytes} байт, ${got.source})`);
+        this.log.info(`[portal] лист убытия сохранён: ${got.bytes} байт, ${got.source}`);
       } catch (e) {
         this.log.warn('[portal] лист убытия не загружен:', e.message);
         out.sheetError = { code: 'sheet_upload', message: e.message };
@@ -276,7 +282,7 @@ class Portal {
       const got = await cap.result(html ? { sheetHtml: html, sheetIds: ids } : { graceMs: 8000 });
       if (!got.ok) return { status: 'no_sheet', code: got.code, message: got.message || '' };
       const up = await this.uploadSheet({ guestId: (job && job.guestId) || p.guestId || '', passport: p.passport || '', pdf: got.pdf });
-      this.log.info(`[portal] лист убытия заново: ${up.path} (${got.bytes} байт)`);
+      this.log.info(`[portal] лист убытия заново: ${got.bytes} байт`);
       return { status: 'done', sheet: { path: up.path, bytes: got.bytes, at: new Date().toISOString(), source: got.source } };
     } catch (e) {
       return { status: 'error', message: e.message };

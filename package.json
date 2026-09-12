@@ -1,7 +1,7 @@
 {
   "name": "hostella-bridge",
-  "productName": "Hostella Bridge",
-  "version": "0.2.4",
+  "productName": "Hosti Bridge",
+  "version": "0.3.0",
   "description": "Мост e-mehmon для Hosti Cloud: программа в трее на компьютере филиала, исполняет задачи госрегистрации из очереди кассы",
   "main": "main.js",
   "private": true,
@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.hostella.bridge",
-    "productName": "Hostella Bridge",
+    "productName": "Hosti Bridge",
     "copyright": "Copyright © 2026 Hosti",
     "files": [
       "main.js",
@@ -39,14 +39,14 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "Hostella Bridge",
+      "shortcutName": "Hosti Bridge",
       "runAfterFinish": true
     }
   },
