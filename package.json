@@ -13,7 +13,7 @@
     "test": "node --test \"tests/**/*.test.mjs\"",
     "core:demo": "node scripts/core-run.mjs --demo",
     "dist": "electron-builder build --win --publish never",
-    "release": "electron-builder build --win --publish always"
+    "release": "npm run dist && node scripts/publish.js"
   },
   "build": {
     "appId": "com.hostella.bridge",

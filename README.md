@@ -66,8 +66,9 @@ npm install
 npm test                      # чистые модули: кодек REST, исходы, очередь, сессия, хранилище
 npm start                     # Electron, рабочий проект
 npm run dist                  # установщик в release/, без публикации
-npm run release               # установщик + черновик релиза на GitHub (нужен GH_TOKEN);
-                              # черновик публикуют: gh release edit vX.Y.Z --repo gulomovff-lgtm/hostella-bridge --draft=false
+npm run release               # установщик + черновик релиза на GitHub через gh (scripts/publish.js:
+                              # exe под именем из latest.yml, сам latest.yml и blockmap — одним черновиком);
+                              # черновик публикуют: gh release edit vX.Y.Z --repo gulomovff-lgtm/hostella-bridge --draft=false --latest
 npm run start:demo            # Electron против эмуляторов hostella-cloud
 npm run core:demo -- pair <код>            # ядро без Electron: подключение
 npm run core:demo -- run [scenarios.json]  # ядро без Electron: очередь со stub-порталом
