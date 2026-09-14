@@ -129,3 +129,17 @@ describe('строки проживаний последней вкладки', 
     assert.match(r.result.last.lastActivity, /oxirgi faollik/);
   });
 });
+
+describe('исходы по контракту, которые расходились', () => {
+  test('пересчёт сумм: ничего не совпало — done not_found, а не failed', () => {
+    const r = classify('recalc', { status: 'not_found', updated: 0 });
+    assert.equal(r.status, 'done');
+    assert.equal(r.result.status, 'not_found');
+  });
+  test('прибытие: valid — done (контракт перечисляет его среди конечных)', () => {
+    assert.equal(classify('arrival', { status: 'valid' }).status, 'done');
+  });
+  test('перехваченная и брошенная задача объясняется словами', () => {
+    assert.match(DESCRIBE.stale, /попытки кончились/);
+  });
+});

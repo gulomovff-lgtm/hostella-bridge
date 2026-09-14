@@ -21,14 +21,14 @@
 
 /** Исходы, после которых задача считается выполненной (по типам). */
 const DONE = Object.freeze({
-  arrival:   ['done', 'needs_decision', 'not_found', 'submit_unconfirmed'],
+  arrival:   ['done', 'needs_decision', 'valid', 'not_found', 'submit_unconfirmed'],
   probe:     ['valid', 'not_found'],
   departure: ['done', 'submitted', 'not_found', 'absent'],
   sheet:     ['done', 'not_found'],
   check:     ['present', 'absent'],
   list:      ['ok'],
   tursbor:   ['ok'],
-  recalc:    ['done', 'ok'],
+  recalc:    ['done', 'ok', 'not_found'],
 });
 
 /** Человеческий текст для `error.message`, когда скрипт своего не дал. */
@@ -48,6 +48,7 @@ const DESCRIBE = Object.freeze({
   no_print_btn: 'Кнопка печати листа на портале не найдена',
   no_sheet: 'Портал не открыл лист убытия',
   timeout: 'Мастер не уложился в отведённое время',
+  stale: 'Мост, взявший задачу, не довёл её до конца — попытки кончились',
   error: 'Сбой автоматики портала',
 });
 

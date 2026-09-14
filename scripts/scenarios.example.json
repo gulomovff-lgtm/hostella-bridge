@@ -133,5 +133,25 @@
     "blocks": []
    }
   }
+ },
+ "departure": {
+  "status": "done"
+ },
+ "sheet": {
+  "status": "not_found"
+ },
+ "check": {
+  "status": "present"
+ },
+ "list": {
+  "status": "ok",
+  "rows": []
+ },
+ "tursbor": {
+  "status": "ok",
+  "rows": []
+ },
+ "recalc": {
+  "status": "not_found"
  }
 }

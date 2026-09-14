@@ -1,7 +1,7 @@
 {
   "name": "hostella-bridge",
   "productName": "Hosti Bridge",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Мост e-mehmon для Hosti Cloud: программа в трее на компьютере филиала, исполняет задачи госрегистрации из очереди кассы",
   "main": "main.js",
   "private": true,

@@ -9,7 +9,13 @@
  *   • берём задачу транзакцией (предусловие «документ не менялся»): два
  *     моста одного филиала не возьмут одну и ту же;
  *   • аренда 2 минуты и продлевается, пока мастер работает, — если мост
- *     умер посреди задачи, её сможет взять другой;
+ *     умер посреди задачи, её перехватит любой мост филиала (в том числе
+ *     этот же после перезапуска): `claimed/running` с истёкшей арендой
+ *     берётся тем же предусловием, попытка засчитывается; когда попытки
+ *     кончились — `failed/stale`, чтобы касса решила сама;
+ *   • итог не перетирает отмену: перед записью документ перечитывается,
+ *     и если он уже конечный (`cancelled` от сервера при отзыве моста),
+ *     запись не делается;
  *   • невзятую и просроченную (`expiresAt`) задачу переводим в `expired`:
  *     регистрировать гостя по задаче получасовой давности уже не просят;
  *   • временный сбой на нашей стороне возвращает задачу в `pending`, пока
@@ -20,9 +26,9 @@
  * Чистые помощники вынесены наружу и покрыты тестами (tests/queue.test.mjs);
  * класс Worker держит только время и побочные действия.
  */
-const { whereEq, whereAll, isTransient } = require('./firebaseRest');
-const { classify, transportFailure } = require('./outcome');
-const { TIMING } = require('./config');
+const { whereEq, whereIn, whereAll, isTransient } = require('./firebaseRest');
+const { classify, transportFailure, DESCRIBE } = require('./outcome');
+const { TIMING, TERMINAL } = require('./config');
 
 /** Разбор снимка очереди: что брать, что гасить. */
 function pickJobs(docs, now = Date.now()) {
@@ -31,6 +37,17 @@ function pickJobs(docs, now = Date.now()) {
   const ready = pending.filter((d) => !expired.includes(d))
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
   return { ready, expired };
+}
+
+/**
+ * Зависшие задачи: взяты (`claimed`/`running`), а аренда истекла.
+ * Старшие первыми — они ждут дольше всех.
+ */
+function pickStale(docs, now = Date.now()) {
+  return (docs || [])
+    .filter((d) => d && (d.status === 'claimed' || d.status === 'running'))
+    .filter((d) => d.leaseUntil && Number.isFinite(Date.parse(d.leaseUntil)) && Date.parse(d.leaseUntil) < now)
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 }
 
 /** Что писать после неудачи: повтор или конец. */
@@ -131,6 +148,20 @@ class Worker {
     });
     return docs;
   }
+  /**
+   * Взятые задачи своего филиала — среди них ищем те, у кого истекла аренда.
+   * Срок отбирается на месте, а не в запросе: неравенство по `leaseUntil`
+   * вместе с двумя равенствами потребовало бы составного индекса в кассе,
+   * а взятых задач у филиала единицы.
+   */
+  async fetchTaken() {
+    const docs = await this.fs.runQuery(this.jobsPath(), {
+      from: [{ collectionId: 'emehmonJobs' }],
+      where: whereAll(whereEq('hostelId', this.branchId), whereIn('status', ['claimed', 'running'])),
+      limit: 20,
+    });
+    return docs;
+  }
 
   async tick() {
     if (!this.state.running || this.state.busy) return;
@@ -153,6 +184,15 @@ class Worker {
         if (!took) continue;
         await this.execute({ ...job, status: 'claimed' });
       }
+      // Зависшее после чужого (или своего прежнего) падения — перехватить.
+      const stale = pickStale(await this.fetchTaken(), Date.now());
+      for (const job of stale) {
+        if (!this.state.running || this.state.paused) break;
+        const took = await this.reclaim(job);
+        if (!took) continue;
+        // Попытку уже засчитал reclaim; итог допишет ту же цифру, не удвоив.
+        await this.execute({ ...job, status: 'claimed' });
+      }
     } catch (e) {
       this.setState({ lastError: { kind: 'poll', message: e.message, at: iso(Date.now()) } });
       if (!isTransient(e)) this.log.error('[queue] опрос очереди:', e.message);
@@ -171,6 +211,31 @@ class Worker {
     return ok;
   }
 
+  /**
+   * Перехватить задачу с истёкшей арендой. Попытка засчитывается: мост,
+   * который её брал, до итога не дошёл. Когда попытки кончились — `failed`
+   * с кодом `stale`, а не бесконечный круг: касса решит, повторять ли.
+   * @returns {boolean} взяли ли (false — успел другой мост или задача исчезла)
+   */
+  async reclaim(job) {
+    const now = Date.now();
+    const attempts = (Number(job.attempts) || 0) + 1;
+    const max = Number(job.maxAttempts) || 3;
+    if (attempts >= max) {
+      const gaveUp = await this.fs.commitUpdate(this.jobPath(job.id), {
+        status: 'failed', attempts, leaseUntil: null, updatedAt: iso(now),
+        error: { code: 'stale', message: DESCRIBE.stale, staleFrom: job.claimedBy || null },
+      }, { updateTime: job.updateTime });
+      if (gaveUp) this.log.warn(`[queue] ${job.type} ${job.id}: аренда истекла ${attempts} раз — failed/stale`);
+      return false;
+    }
+    const ok = await this.fs.commitUpdate(this.jobPath(job.id), {
+      status: 'claimed', claimedBy: this.bridgeId, claimedAt: iso(now), attempts,
+      leaseUntil: iso(now + this.timing.LEASE_MS), reclaimedFrom: job.claimedBy || null, updatedAt: iso(now),
+    }, { updateTime: job.updateTime });
+    if (ok) this.log.info(`[queue] ${job.type} ${job.id}: перехвачена после ${job.claimedBy || '?'} (попытка ${attempts})`);
+    return ok;
+  }
   async execute(job) {
     const started = Date.now();
     this.setState({ lastJob: { id: job.id, type: job.type, guestId: job.guestId || null, startedAt: iso(started), status: 'running' } });
@@ -199,7 +264,16 @@ class Worker {
       if (patch.status === 'pending') patch.error = null;
     }
     try {
-      await this.fs.patch(this.jobPath(job.id), patch);
+      // Отмену не перетираем: пока мастер работал, сервер мог отозвать мост
+      // и поставить `cancelled`. Итог, записанный поверх, выглядел бы как
+      // выполненная задача, которую никто не заказывал.
+      const cur = await this.fs.get(this.jobPath(job.id)).catch(() => null);
+      if (cur && TERMINAL.includes(cur.status)) {
+        this.log.warn(`[queue] ${job.type} ${job.id}: уже ${cur.status} — итог не записан`);
+        patch = { status: cur.status };
+      } else {
+        await this.fs.patch(this.jobPath(job.id), patch);
+      }
     } catch (e) {
       this.log.error('[queue] итог не записан:', job.id, e.message);
       this.setState({ lastError: { kind: 'write', message: e.message, at: iso(now) } });
@@ -227,4 +301,4 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timer]).finally(() => clearTimeout(t));
 }
 
-module.exports = { Worker, pickJobs, afterFailure, withTimeout };
+module.exports = { Worker, pickJobs, pickStale, afterFailure, withTimeout };

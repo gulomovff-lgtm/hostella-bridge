@@ -5,7 +5,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import queue from '../src/queue.js';
 
-const { Worker, pickJobs, afterFailure } = queue;
+const { Worker, pickJobs, pickStale, afterFailure } = queue;
 
 const NOW = Date.parse('2026-09-11T10:00:00.000Z');
 const job = (o = {}) => ({
@@ -24,6 +24,16 @@ describe('разбор снимка очереди', () => {
     ], NOW);
     assert.deepEqual(ready.map((j) => j.id), ['old', 'new']);
     assert.deepEqual(expired.map((j) => j.id), ['dead']);
+  });
+  test('зависшие: взятые с истёкшей арендой, старшие первыми; живая аренда — мимо', () => {
+    const stale = pickStale([
+      job({ id: 'a', status: 'running', leaseUntil: '2026-09-11T09:59:00.000Z', createdAt: '2026-09-11T09:20:00.000Z' }),
+      job({ id: 'b', status: 'claimed', leaseUntil: '2026-09-11T09:58:00.000Z', createdAt: '2026-09-11T09:10:00.000Z' }),
+      job({ id: 'alive', status: 'running', leaseUntil: '2026-09-11T10:01:00.000Z' }),
+      job({ id: 'noLease', status: 'running' }),
+      job({ id: 'p', status: 'pending', leaseUntil: '2026-09-11T09:00:00.000Z' }),
+    ], NOW);
+    assert.deepEqual(stale.map((j) => j.id), ['b', 'a']);
   });
   test('после неудачи: временную повторяем, пока есть попытки; иначе failed', () => {
     assert.equal(afterFailure(job({ attempts: 0 }), { transient: true }).status, 'pending');
@@ -55,8 +65,12 @@ class FakeFs {
   }
   async runQuery(parent, q) {
     this.queries.push({ parent, q });
-    return [...this.docs.values()].filter((d) => d.status === 'pending' && d.type);
+    // Второй запрос очереди — по взятым задачам (status IN claimed/running).
+    const f = q.where.compositeFilter.filters.find((x) => x.fieldFilter.field.fieldPath === 'status').fieldFilter;
+    const wanted = f.op === 'IN' ? f.value.arrayValue.values.map((v) => v.stringValue) : [f.value.stringValue];
+    return [...this.docs.values()].filter((d) => wanted.includes(d.status) && d.type);
   }
+  async get(path) { return this.docs.get(path) || null; }
   doc(id) { return this.docs.get(`tenants/t1/emehmonJobs/${id}`); }
 }
 
@@ -157,5 +171,57 @@ describe('Worker', () => {
     assert.equal(hb.hostelId, 'b1');
     assert.equal(hb.version, '0.1.0');
     assert.equal(hb.queue, 3);
+  });
+  test('зависшую после чужого падения задачу перехватывает и доводит', async () => {
+    // Мост PC-0 умер посреди задачи: аренда истекла, статус running.
+    const fs = new FakeFs([job({ id: 'j1', status: 'running', claimedBy: 'PC-0', attempts: 1,
+      leaseUntil: '2000-01-01T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z' })]);
+    let ran = 0;
+    const w = worker(fs, { run: async () => { ran += 1; return { status: 'done' }; } });
+    w.state.running = true;
+    await w.tick();
+    const d = fs.doc('j1');
+    assert.equal(ran, 1);
+    assert.equal(d.status, 'done');
+    assert.equal(d.claimedBy, 'PC-1');
+    assert.equal(d.reclaimedFrom, 'PC-0');
+    assert.equal(d.attempts, 2, 'перехват засчитан как попытка');
+    const ops = fs.queries.map((x) => x.q.where.compositeFilter.filters.find((f) => f.fieldFilter.field.fieldPath === 'status').fieldFilter.op);
+    assert.deepEqual(ops, ['EQUAL', 'IN'], 'взятые ищутся вторым запросом по своему филиалу');
+  });
+  test('перехват, когда попытки кончились, — failed/stale, а не бесконечный круг', async () => {
+    const fs = new FakeFs([job({ id: 'j1', status: 'claimed', claimedBy: 'PC-0', attempts: 2, maxAttempts: 3,
+      leaseUntil: '2000-01-01T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z' })]);
+    let ran = 0;
+    const w = worker(fs, { run: async () => { ran += 1; return { status: 'done' }; } });
+    w.state.running = true;
+    await w.tick();
+    assert.equal(ran, 0);
+    assert.equal(fs.doc('j1').status, 'failed');
+    assert.equal(fs.doc('j1').error.code, 'stale');
+    assert.equal(fs.doc('j1').error.staleFrom, 'PC-0');
+  });
+  test('живую аренду чужого моста не трогаем', async () => {
+    const fs = new FakeFs([job({ id: 'j1', status: 'running', claimedBy: 'PC-0', attempts: 1,
+      leaseUntil: '2099-01-01T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z' })]);
+    let ran = 0;
+    const w = worker(fs, { run: async () => { ran += 1; return { status: 'done' }; } });
+    w.state.running = true;
+    await w.tick();
+    assert.equal(ran, 0);
+    assert.equal(fs.doc('j1').status, 'running');
+    assert.equal(fs.doc('j1').claimedBy, 'PC-0');
+  });
+  test('отмена во время выполнения не перетирается итогом', async () => {
+    const fs = new FakeFs([job({ id: 'j1', expiresAt: '2099-01-01T00:00:00.000Z' })]);
+    const w = worker(fs, { run: async () => {
+      // Пока мастер работал, сервер отозвал мост и поставил cancelled.
+      fs.docs.get('tenants/t1/emehmonJobs/j1').status = 'cancelled';
+      return { status: 'done' };
+    } });
+    w.state.running = true;
+    await w.tick();
+    assert.equal(fs.doc('j1').status, 'cancelled');
+    assert.equal(fs.doc('j1').result, undefined, 'итог поверх отмены не записан');
   });
 });

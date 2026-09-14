@@ -24,15 +24,7 @@ const { TIMING } = require('./config');
 
 const ORIGIN = 'https://emehmon.uz';
 const safeId = (s) => String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'branch';
-const isEmehmonUrl = (url) => {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:') return false;
-    const h = u.hostname.toLowerCase();
-    return h === 'emehmon.uz' || h.endsWith('.emehmon.uz');
-  } catch { return false; }
-};
-const isLoginUrl = (url) => /\/login(\b|\/|\?|$)/i.test(String(url || ''));
+const { isEmehmonUrl, isLoginUrl, shouldRemindLogin } = require('./portalRules');
 
 const lightPartitions = new Set();
 
@@ -329,7 +321,7 @@ class Portal {
 
   /** Напомнить о входе не чаще раза в LOGIN_WAIT_MS. */
   shouldRemindLogin(now = Date.now()) {
-    return now - this.lastLoginShownAt > TIMING.LOGIN_WAIT_MS;
+    return shouldRemindLogin(this.lastLoginShownAt, now);
   }
 
   hide() { if (this._win && !this._win.isDestroyed()) this._win.hide(); }

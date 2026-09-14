@@ -190,6 +190,8 @@ class Firestore {
 /** Условие равенства для structuredQuery. */
 const whereEq = (field, value) => ({ fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: toValue(value) } });
 const whereAll = (...filters) => ({ compositeFilter: { op: 'AND', filters } });
+/** Условие «значение из списка» (до 30 значений — предел Firestore). */
+const whereIn = (field, values) => ({ fieldFilter: { field: { fieldPath: field }, op: 'IN', value: { arrayValue: { values: values.map(toValue) } } } });
 
 // ── Функции и токены ──────────────────────────────────────────────────────
 
@@ -255,6 +257,6 @@ function decodeJwt(token) {
 module.exports = {
   RestError, isTransient,
   toValue, toFields, fromValue, fromFields, fromDoc,
-  Firestore, whereEq, whereAll,
+  Firestore, whereEq, whereIn, whereAll,
   callFunction, signInWithCustomToken, refreshIdToken, decodeJwt,
 };

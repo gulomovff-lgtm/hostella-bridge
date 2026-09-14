@@ -21,6 +21,7 @@ const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
 const { profileFor, assertSecure, TIMING, VERSION } = require('./src/config');
+const { canInstallNow } = require('./src/updaterRules');
 const { logHook } = require('./src/redact');
 const { Store, safeStorageCodec } = require('./src/store');
 const { Session } = require('./src/auth');
@@ -373,9 +374,12 @@ function stopWorker() {
 // автозапуск поднимает его после перезагрузки Windows.
 
 function installUpdate(reason) {
-  if (!updateReady || quitting) return;
-  if (worker && worker.state.busy) return;              // задача в портале — не рвём
-  if (portal && portal._loginMode) return;               // кассир вводит капчу
+  const verdict = canInstallNow({
+    updateReady, quitting,
+    busy: !!(worker && worker.state.busy),          // задача в портале — не рвём
+    loginMode: !!(portal && portal._loginMode),      // кассир вводит капчу
+  });
+  if (!verdict.ok) return;
   log.info(`[updater] ставлю ${updateReady} (${reason})`);
   quitting = true;
   if (worker) worker.stop();
